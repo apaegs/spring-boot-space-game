@@ -27,6 +27,7 @@ export class WorldMap {
     private app: Application | null = null
     private planetsLayer: Container | null = null
     private shipLayer: Container | null = null
+    private onPlanetClick: ((planet: PlanetDto) => void) | null = null
 
     /**
      * Mount the Pixi app inside the given container. Idempotent-ish: calling
@@ -73,8 +74,16 @@ export class WorldMap {
             const { px, py } = this.tileToPx(planet.x, planet.y)
 
             const dot = new Graphics()
+            // Hit area is the larger circle (10px); the visible disc stays at
+            // 6px. Makes clicking less fiddly on a 6px-tile grid without
+            // visually inflating the planet.
+            dot.circle(px, py, 10)
+            dot.fill({ color: WorldMap.COLORS.planet, alpha: 0 }) // invisible hit area
             dot.circle(px, py, 6)
             dot.fill(WorldMap.COLORS.planet)
+            dot.eventMode = 'static'
+            dot.cursor = 'pointer'
+            dot.on('pointerdown', () => this.onPlanetClick?.(planet))
             this.planetsLayer.addChild(dot)
 
             const label = new Text({
@@ -89,6 +98,15 @@ export class WorldMap {
             label.y = py - 6
             this.planetsLayer.addChild(label)
         }
+    }
+
+    /**
+     * Set the callback invoked when a planet is clicked. The map calls this
+     * with the {@link PlanetDto} the player clicked. React typically wires it
+     * to a "queue MOVE + LAND to this planet" mutation.
+     */
+    setOnPlanetClick(callback: ((planet: PlanetDto) => void) | null): void {
+        this.onPlanetClick = callback
     }
 
     setShip(ship: ShipDto | null): void {

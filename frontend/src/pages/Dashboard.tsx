@@ -1,11 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { createOrder } from '../api/orders'
 import { listPlanets } from '../api/planets'
 import { getMyShip } from '../api/ship'
 import { getWorld } from '../api/world'
 import { useAuth } from '../auth/AuthContext'
 import { OrdersPanel } from '../components/OrdersPanel'
 import { WorldMapView } from '../components/WorldMapView'
+import type { PlanetDto } from '../types/api'
 
 /** Refetch ship + world this often so movement / ticks visibly advance. */
 const POLL_MS = 5000
@@ -13,6 +15,7 @@ const POLL_MS = 5000
 export function Dashboard() {
     const { user, logout } = useAuth()
     const navigate = useNavigate()
+    const queryClient = useQueryClient()
 
     const { data: ship } = useQuery({
         queryKey: ['ship'],
@@ -26,13 +29,23 @@ export function Dashboard() {
         refetchInterval: POLL_MS,
     })
 
-    // Planets are static (seeded by V5 — they don't change). One fetch ever;
-    // no polling. Cache them with a long staleTime so navigating away and
-    // back doesn't refetch.
     const { data: planets } = useQuery({
         queryKey: ['planets'],
         queryFn: ({ signal }) => listPlanets(signal),
         staleTime: Infinity,
+    })
+
+    // Clicking a planet enqueues MOVE then LAND. The two orders are sent
+    // sequentially so the LAND can't slip ahead of the MOVE in any race.
+    // The orders endpoint orders strictly by created_at so even if we
+    // fired them in parallel they'd land FIFO — sequential is the explicit
+    // safer pattern.
+    const travelTo = useMutation({
+        mutationFn: async (planet: PlanetDto) => {
+            await createOrder({ kind: 'MOVE', params: { x: planet.x, y: planet.y } })
+            await createOrder({ kind: 'LAND' })
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
     })
 
     const onLogout = async () => {
@@ -63,15 +76,17 @@ export function Dashboard() {
             </section>
 
             <section className="map-card">
-                <WorldMapView planets={planets ?? []} ship={ship ?? null} />
+                <WorldMapView
+                    planets={planets ?? []}
+                    ship={ship ?? null}
+                    onPlanetClick={(planet) => travelTo.mutate(planet)}
+                />
             </section>
 
             <section className="orders-card">
                 <h2>Orders</h2>
                 <OrdersPanel />
             </section>
-
-            <p className="muted">Click planets to travel — coming in the next commit.</p>
         </main>
     )
 }
