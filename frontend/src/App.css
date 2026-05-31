@@ -1,20 +1,63 @@
-/* Minimal styling for the scaffold. Real UI lands in later commits. */
-.app {
+/* Minimal styling. Real visual design is deferred. */
+
+.auth-page,
+.dashboard {
     font-family: system-ui, sans-serif;
     max-width: 480px;
     margin: 4rem auto;
     padding: 2rem;
-    text-align: center;
 }
 
-.status {
-    font-size: 1.2rem;
+.auth-page form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
 
-.online {
-    color: #2e7d32;
+.auth-page label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
 }
 
-.offline {
+.auth-page input {
+    padding: 0.5rem;
+    font: inherit;
+}
+
+.auth-page button {
+    padding: 0.6rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.auth-page button:disabled {
+    cursor: progress;
+    opacity: 0.6;
+}
+
+.form-error {
     color: #c62828;
+    margin: 0;
+}
+
+.dashboard header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.loading {
+    text-align: center;
+    margin: 4rem;
+    opacity: 0.6;
+}
+
+.health-indicator {
+    background: #c62828;
+    color: white;
+    padding: 0.5rem 1rem;
+    text-align: center;
+    font-size: 0.9rem;
 }
