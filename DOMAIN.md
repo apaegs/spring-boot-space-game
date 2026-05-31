@@ -81,6 +81,10 @@ Singleton table. Only ever one row.
 | grid_width     | INT          | default 100                              |
 | grid_height    | INT          | default 100                              |
 
+**Tick interval**: configured via `game.tick.interval-ms` in `application.properties`. v1 default is `60000` (1 min). Dev environments shorten this via `.env`.
+
+**Tick concurrency**: v1 runs a single application instance and the `@Scheduled` framework serializes calls within a JVM, so two ticks can't overlap. The increment is also a single SQL `UPDATE`, so even if a future bug triggers it concurrently the row never goes missing. Horizontal scaling will need cross-node coordination (Shedlock or similar) — deferred.
+
 ## Not in v1
 
 With justification — so we know *why* something was deferred, not just *that* it was.
