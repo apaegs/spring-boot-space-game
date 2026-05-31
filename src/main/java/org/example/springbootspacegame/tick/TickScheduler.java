@@ -19,7 +19,16 @@ class TickScheduler {
 
     private final TickService tickService;
 
-    @Scheduled(fixedDelayString = "${game.tick.interval-ms}")
+    // initialDelay matches the fixed delay so the first tick doesn't fire
+    // immediately on startup. In production this just defers the first tick by
+    // one interval. In tests we override game.tick.interval-ms to ~1 hour via
+    // src/test/resources/application.properties, which effectively disables the
+    // scheduler — tests call TickService.advanceTick() directly for determinism.
+    // Without this, the scheduler could race tests' world_state writes and
+    // either deadlock (cleanup.sql vs advanceTick) or bump currentTick past
+    // what a test expects.
+    @Scheduled(fixedDelayString = "${game.tick.interval-ms}",
+               initialDelayString = "${game.tick.interval-ms}")
     void tick() {
         try {
             long tick = tickService.advanceTick();
