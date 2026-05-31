@@ -39,22 +39,24 @@ Authentication identity — the person behind the account.
 
 ### Ship
 
-Mothership. In v1: exactly one per User, enforced in application logic (not as a DB constraint — see [Forward-compat](#forward-compat) below).
+A player-controlled vessel. **A User can have any number of Ships** (the auto-created mothership at registration plus any created via `POST /api/ships`). Historic note: v1 originally constrained this to exactly one; the constraint was lifted in #32 when the multi-ship UI shipped.
 
 | Field           | Type         | Notes                                                   |
 |-----------------|--------------|---------------------------------------------------------|
 | id              | UUID         | PK                                                      |
-| user_id         | UUID         | FK → user.id, **not unique** (for future fleet support) |
+| user_id         | UUID         | FK → user.id (not unique — many ships per user)         |
 | name            | VARCHAR(64)  | player-chosen or generated                              |
 | x               | INT          | 0 ≤ x < grid_width                                      |
 | y               | INT          | 0 ≤ y < grid_height                                     |
 | created_at      | TIMESTAMPTZ  | default `now()`                                         |
 
+**Ownership**: every ship-scoped endpoint (`GET /api/ships/{id}/...`, `POST /api/ships/{id}/orders`, etc.) checks that the `{shipId}` belongs to the caller via `ShipService.requireOwnedShip`. A non-owned ship ID 404s — deliberately indistinguishable from "ship doesn't exist" so the API doesn't leak other users' ship IDs.
+
 **Position vs. orders**: a ship is at a single tile `(x, y)`. What it's currently *doing* lives in the order queue (see `ShipOrder` below), not on the ship row. Earlier v1 drafts had `destination_x/y` columns directly on the ship; those were dropped in V4 when the orders queue replaced them.
 
-**Spawn**: new ships are placed at the center of the grid `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Random spawn was considered but rejected to keep the v1 test loop predictable. Note: Earth is also seeded at `(50, 50)`, so every new player starts standing on their home planet.
+**Spawn**: every new ship — auto-created or via `POST /api/ships` — starts at `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Earth is also seeded at `(50, 50)` so a fresh player's mothership starts standing on their home planet.
 
-**Name**: auto-generated as `"<username>'s ship"` at registration. Player-chosen names are deferred (see open question 4 below) — when added, only the default at registration changes.
+**Name**: auto-generated as `"<username>'s ship"` for the first ship and `"<username>'s ship N"` for the Nth additional ship (N = current ship count + 1). `POST /api/ships` accepts an optional `name` in the body to override the auto-name.
 
 ### ShipOrder
 
@@ -120,7 +122,6 @@ With justification — so we know *why* something was deferred, not just *that* 
 
 | Concept                              | Why deferred                                                                      | How it's introduced later                                       |
 |--------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------|
-| **Fleet** (>1 ship)                  | YAGNI for v1, but the schema is ready                                             | App logic allows multiple Ship rows; maybe `is_mothership`      |
 | **Crew**                             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                           |
 | **Ship speed**                       | All ships move 1 tile/tick in v1                                                  | New `speed` column on `ship`; MOVE handler loops `speed` times  |
 | **Ship types & capabilities**        | One ship class in v1; later "scout can SCAN, miner can MINE, freighter cannot"    | Add `ship_type` (FK or enum) + per-type allowed `OrderHandler` list |
@@ -133,11 +134,7 @@ With justification — so we know *why* something was deferred, not just *that* 
 
 ## Forward-compat
 
-`Ship.user_id` has **no** unique constraint even though v1 has 1 ship per User. Reason: when fleet support arrives, it should be a pure application-logic change (lift the constraint in code) — not a migration. DB constraints are expensive to walk back.
-
-The `GET /api/ship` (singular) endpoint accepts a URL-breaking change to `/api/ships` when fleet arrives, since there are no external consumers.
-
-`ShipOrder.kind` is `VARCHAR` (not an `ENUM` type) so adding a new order kind is a code-only change. Validation happens at the application layer against the set of registered `OrderHandler` strategies.
+`ShipOrder.kind` is `VARCHAR` (not an `ENUM` type) so adding a new order kind is a code-only change. Validation happens at the application layer against the set of registered `OrderHandler` strategies. (The original "Ship.user_id is not unique so multi-ship is a code change later" forward-compat note has been **fulfilled** — multi-ship landed in #32, and the absent constraint is what made it possible without a migration.)
 
 ## Process: adding a new domain concept
 

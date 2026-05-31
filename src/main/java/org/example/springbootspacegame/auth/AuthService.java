@@ -50,9 +50,11 @@ public class AuthService {
         }
 
         // Auto-create the player's starting mothership in the same transaction.
-        // If ship creation fails, the user insert rolls back — there is no "user without a ship"
-        // state to ever observe (v1 invariant: 1 user = 1 ship). See issue #4.
-        shipService.createForUser(saved.getId(), saved.getUsername());
+        // If ship creation fails, the user insert rolls back — so there's never a
+        // user-without-a-ship state to observe. Players can create additional
+        // ships later via POST /api/ships (issue #32). Pass null for the desired
+        // name so ShipService generates the default "<username>'s ship".
+        shipService.createForUser(saved.getId(), saved.getUsername(), null);
         return MeResponse.from(saved);
     }
 
