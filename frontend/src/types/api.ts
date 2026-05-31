@@ -39,6 +39,14 @@ export type ShipDto = {
     createdAt: string
 }
 
+/**
+ * Body for `POST /api/ships`. {@code name} is optional — empty body or
+ * omitted {@code name} yields the backend-generated auto-name.
+ */
+export type CreateShipRequest = {
+    name?: string
+}
+
 // --- world ---
 
 export type WorldDto = {

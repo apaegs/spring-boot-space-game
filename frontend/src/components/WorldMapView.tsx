@@ -4,29 +4,42 @@ import type { PlanetDto, ShipDto } from '../types/api'
 
 type WorldMapViewProps = {
     planets: PlanetDto[]
-    ship: ShipDto | null
+    ships: ShipDto[]
+    selectedShipId: string | null
+    /** Click on any tile (background or otherwise). Used for targeting-mode. */
+    onTileClick?: (x: number, y: number) => void
+    /** Click on a planet specifically — stops propagation so the tile click
+     * doesn't also fire. */
     onPlanetClick?: (planet: PlanetDto) => void
 }
 
 /**
- * React wrapper around the PixiJS {@link WorldMap}. Sole job: mount/unmount
- * the Pixi app on a div, and forward prop changes into the imperative API.
- * React never owns the canvas state — see CLAUDE.md "Frontend" section.
+ * React wrapper around the PixiJS {@link WorldMap}. Owns the mount/unmount
+ * lifecycle and forwards prop changes through the imperative API.
  */
-export function WorldMapView({ planets, ship, onPlanetClick }: WorldMapViewProps) {
+export function WorldMapView({
+    planets,
+    ships,
+    selectedShipId,
+    onTileClick,
+    onPlanetClick,
+}: WorldMapViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null)
     const mapRef = useRef<WorldMap | null>(null)
-    // Stash the latest callback in a ref so we can forward it without
-    // remounting the entire Pixi app when the parent re-renders with a
-    // new function reference. Updating the ref in an effect (not during
-    // render) keeps React's strict-mode rules happy.
+
+    // Stash the latest callbacks in refs so we forward them without forcing
+    // the Pixi app to remount when the parent re-renders with new functions.
+    // Updated in an effect (not during render) to keep React 19 strict-mode
+    // happy.
+    const onTileClickRef = useRef(onTileClick)
     const onPlanetClickRef = useRef(onPlanetClick)
+    useEffect(() => {
+        onTileClickRef.current = onTileClick
+    }, [onTileClick])
     useEffect(() => {
         onPlanetClickRef.current = onPlanetClick
     }, [onPlanetClick])
 
-    // Mount once. Pixi's init is async so we track cancellation to avoid
-    // appending a stale canvas if the component unmounts during await.
     useEffect(() => {
         const container = containerRef.current
         if (!container) return
@@ -38,6 +51,7 @@ export function WorldMapView({ planets, ship, onPlanetClick }: WorldMapViewProps
                 map.destroy()
                 return
             }
+            map.setOnTileClick((x, y) => onTileClickRef.current?.(x, y))
             map.setOnPlanetClick((planet) => onPlanetClickRef.current?.(planet))
             mapRef.current = map
         })
@@ -54,8 +68,8 @@ export function WorldMapView({ planets, ship, onPlanetClick }: WorldMapViewProps
     }, [planets])
 
     useEffect(() => {
-        mapRef.current?.setShip(ship)
-    }, [ship])
+        mapRef.current?.setShips(ships, selectedShipId)
+    }, [ships, selectedShipId])
 
     return <div ref={containerRef} className="world-map" />
 }
