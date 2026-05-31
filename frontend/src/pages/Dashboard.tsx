@@ -6,7 +6,9 @@ import { getMyShip } from '../api/ship'
 import { getWorld } from '../api/world'
 import { useAuth } from '../auth/AuthContext'
 import { OrdersPanel } from '../components/OrdersPanel'
+import { TickCounter } from '../components/TickCounter'
 import { WorldMapView } from '../components/WorldMapView'
+import { ApiError } from '../api/client'
 import type { PlanetDto } from '../types/api'
 
 /** Refetch ship + world this often so movement / ticks visibly advance. */
@@ -71,7 +73,9 @@ export function Dashboard() {
                     <dt>Position</dt>
                     <dd>{ship ? `(${ship.x}, ${ship.y})` : '—'}</dd>
                     <dt>World tick</dt>
-                    <dd>{world ? world.currentTick : '—'}</dd>
+                    <dd>
+                        <TickCounter tick={world?.currentTick} />
+                    </dd>
                 </dl>
             </section>
 
@@ -81,6 +85,14 @@ export function Dashboard() {
                     ship={ship ?? null}
                     onPlanetClick={(planet) => travelTo.mutate(planet)}
                 />
+                {travelTo.error && (
+                    <p className="form-error" role="alert">
+                        Could not queue travel:{' '}
+                        {travelTo.error instanceof ApiError
+                            ? travelTo.error.message
+                            : 'unknown error'}
+                    </p>
+                )}
             </section>
 
             <section className="orders-card">
