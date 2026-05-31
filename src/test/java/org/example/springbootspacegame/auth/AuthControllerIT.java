@@ -1,11 +1,9 @@
 package org.example.springbootspacegame.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.springbootspacegame.TestcontainersConfiguration;
+import org.example.springbootspacegame.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,8 +17,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@IntegrationTest
 class AuthControllerIT {
 
     @Autowired
