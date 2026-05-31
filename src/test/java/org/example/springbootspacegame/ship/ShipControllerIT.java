@@ -1,14 +1,12 @@
 package org.example.springbootspacegame.ship;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.springbootspacegame.TestcontainersConfiguration;
+import org.example.springbootspacegame.IntegrationTest;
 import org.example.springbootspacegame.auth.LoginRequest;
 import org.example.springbootspacegame.auth.RegisterRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,8 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@IntegrationTest
 class ShipControllerIT {
 
     @Autowired
@@ -80,10 +77,7 @@ class ShipControllerIT {
 
     @Test
     void shipPositionIsWithinGrid() throws Exception {
-        // Unique names per test — Spring shares the application context across IT classes
-        // and the DB is not reset between tests, so "uhura" from AuthControllerIT would
-        // collide here. Cleanest fix (per-test rollback or schema reset) is a follow-up.
-        MockHttpSession session = registerAndLogin("chekov", "chekov@enterprise.example", "course-laid-in1");
+        MockHttpSession session = registerAndLogin("uhura", "uhura@enterprise.example", "frequency-open-1");
 
         mockMvc.perform(get("/api/ship").session(session))
                 .andExpect(status().isOk())
