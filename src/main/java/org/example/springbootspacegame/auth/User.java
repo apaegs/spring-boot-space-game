@@ -35,6 +35,11 @@ public class User {
     @Column(nullable = false)
     private String email;
 
+    /**
+     * BCrypt hash of the password. Getter is package-private so the hash never leaks
+     * outside the {@code auth} package (e.g. via accidental DTO serialization).
+     */
+    @Getter(AccessLevel.PACKAGE)
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 

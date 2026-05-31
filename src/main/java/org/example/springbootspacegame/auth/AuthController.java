@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -29,13 +30,11 @@ public class AuthController {
     private final AuthService authService;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
-    private final UserRepository userRepository;
 
     @PostMapping("/register")
-    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.CREATED)
+    @ResponseStatus(HttpStatus.CREATED)
     public MeResponse register(@Valid @RequestBody RegisterRequest request) {
-        User user = authService.register(request);
-        return MeResponse.from(user);
+        return MeResponse.from(authService.register(request));
     }
 
     @PostMapping("/login")
@@ -52,6 +51,16 @@ public class AuthController {
             auth = authenticationManager.authenticate(authRequest);
         } catch (BadCredentialsException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+        }
+
+        // Session fixation protection: if the client already had a session id (e.g. an
+        // anonymous one set by a prior request), rotate it now that we've authenticated.
+        // Mirrors what Spring Security's default ChangeSessionIdAuthenticationStrategy does
+        // inside the standard form-login filter chain — we have to do it ourselves here
+        // because we authenticate manually rather than via UsernamePasswordAuthenticationFilter.
+        HttpSession existing = httpRequest.getSession(false);
+        if (existing != null) {
+            httpRequest.changeSessionId();
         }
 
         SecurityContext context = SecurityContextHolder.createEmptyContext();
@@ -74,12 +83,6 @@ public class AuthController {
 
     @GetMapping("/me")
     public MeResponse me() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || !(auth.getPrincipal() instanceof AuthenticatedUser principal)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        }
-        User user = userRepository.findById(principal.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        return MeResponse.from(user);
+        return MeResponse.from(authService.getCurrentUser());
     }
 }

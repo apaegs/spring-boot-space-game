@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-class AuthFlowIT {
+class AuthControllerIT {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
