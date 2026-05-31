@@ -62,4 +62,4 @@ Mer detaljer om konventioner finns i [CLAUDE.md](CLAUDE.md).
 └── .github/workflows/ci.yml                         # CI
 ```
 
-Frontend hamnar i en separat mapp (`frontend/`) som scaffoldas i [issue #4](../../issues).
+Frontend hamnar i `frontend/` (React + Vite, scaffoldas i [issue #4](../../issues)). 2D-rendering sker via PixiJS i en `<canvas>` inuti React-appen; vanlig DOM-React för menyer, dashboards och formulär.

@@ -17,6 +17,14 @@ docker compose up -d            # Bara Postgres (om du inte vill köra appen)
 
 Appen på http://localhost:8080.
 
+## Frontend
+
+- **React + Vite** i `frontend/`. Backend exponerar REST under `/api/**`.
+- **PixiJS** för 2D-kartan — en `<canvas>` monterad i en React-komponent. Pixi-koden lever isolerad från React-trädet (Pixi äger sin egen render-loop); React syncar bara state in via props/refs och läser ut event via callbacks.
+- **Inte** Phaser — overkill för tick-baserat.
+- Animerade siffror via en lättviktig lib (t.ex. `framer-motion` eller `react-spring`); ingen anledning att skriva egna easing-funktioner.
+- State: börja med React state + `@tanstack/react-query` för server-state. Lägg inte till Redux/Zustand innan det faktiskt behövs.
+
 ## Kodkonventioner
 
 ### Paketstruktur
