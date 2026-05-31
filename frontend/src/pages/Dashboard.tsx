@@ -47,7 +47,10 @@ export function Dashboard() {
             await createOrder({ kind: 'MOVE', params: { x: planet.x, y: planet.y } })
             await createOrder({ kind: 'LAND' })
         },
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
+        // onSettled (not onSuccess) so the queue refreshes even if the second
+        // POST fails — the first MOVE order was queued server-side and should
+        // appear in the UI immediately, not 5s later when the next poll fires.
+        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
     })
 
     const onLogout = async () => {

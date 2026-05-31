@@ -13,12 +13,16 @@ export function TickCounter({ tick }: { tick: number | undefined }) {
 
     useEffect(() => {
         if (tick === undefined) return
-        if (previousRef.current !== undefined && tick !== previousRef.current) {
+        // Capture whether this tick differs *before* updating previousRef, so
+        // the next render compares against the immediate previous tick (not a
+        // stale value frozen at the time of the last non-flashing render).
+        const changed = previousRef.current !== undefined && tick !== previousRef.current
+        previousRef.current = tick
+        if (changed) {
             setFlash(true)
             const timer = setTimeout(() => setFlash(false), FLASH_MS)
             return () => clearTimeout(timer)
         }
-        previousRef.current = tick
     }, [tick])
 
     return (

@@ -23,10 +23,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const register = async (body: RegisterRequest) => {
-        const me = await apiRegister(body)
+        await apiRegister(body)
         // register doesn't auto-login server-side, so we still need to log in
         // with the same credentials. Same effect: user lands authenticated.
         await apiLogin({ username: body.username, password: body.password })
+        // Mirror the login() flow: round-trip through getMe() rather than
+        // trusting the register response. Verifies the session is live and
+        // ensures the user state matches what /api/auth/me would return.
+        const me = await getMe()
         setUser(me)
     }
 
