@@ -6,14 +6,15 @@ import java.util.UUID;
 /**
  * API response for {@code GET /api/ship}. We never serialize the JPA entity directly
  * (see CLAUDE.md "Entity vs DTO").
+ *
+ * <p>What the ship is currently doing lives in the order queue
+ * ({@code GET /api/ship/orders}), not on this DTO.
  */
 public record ShipDto(
         UUID id,
         String name,
         int x,
         int y,
-        Integer destinationX,
-        Integer destinationY,
         OffsetDateTime createdAt
 ) {
     public static ShipDto from(Ship ship) {
@@ -22,8 +23,6 @@ public record ShipDto(
                 ship.getName(),
                 ship.getX(),
                 ship.getY(),
-                ship.getDestinationX(),
-                ship.getDestinationY(),
                 ship.getCreatedAt()
         );
     }

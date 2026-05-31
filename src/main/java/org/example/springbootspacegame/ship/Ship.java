@@ -43,12 +43,8 @@ public class Ship {
     @Column(nullable = false)
     private int y;
 
-    /** Set together with {@link #destinationY}, or both null. Cleared on arrival. */
-    @Column(name = "destination_x")
-    private Integer destinationX;
-
-    @Column(name = "destination_y")
-    private Integer destinationY;
+    // destination_x/y removed in V4 — what a ship is currently doing lives in
+    // the ship_orders queue, not on the ship row. See DOMAIN.md "ShipOrder".
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
