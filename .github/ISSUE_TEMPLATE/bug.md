@@ -1,31 +1,31 @@
 ---
 name: Bug
-about: Något funkar inte som det ska
+about: Something doesn't work the way it should
 title: "[bug] "
 labels: ["bug"]
 ---
 
-**Vad hände?**
+**What happened?**
 
-<!-- Kort beskrivning av problemet. -->
+<!-- A short description of the problem. -->
 
-**Vad förväntade du dig?**
+**What did you expect?**
 
-<!-- Vad skulle ha hänt istället? -->
+<!-- What should have happened instead? -->
 
-**Reproduktionssteg**
+**Steps to reproduce**
 
 1.
 2.
 3.
 
-**Miljö**
+**Environment**
 
 - OS:
-- Java-version (`java -version`):
-- Branch/commit (`git rev-parse --short HEAD`):
+- Java version (`java -version`):
+- Branch / commit (`git rev-parse --short HEAD`):
 
-**Stack trace / loggar** (om relevant)
+**Stack trace / logs** (if relevant)
 
 ```
 ```

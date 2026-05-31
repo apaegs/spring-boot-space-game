@@ -79,7 +79,8 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 - Squash and merge.
 
 ### Issues
-- `.github/ISSUE_TEMPLATE/` has two templates: **Bug** (what happened, expected, repro) and **Feature** (Mål, Omfattning, Acceptans — same format as #2/#3/#4).
+- Write issues in **English** — matches the rest of the project (code, commits, PRs, docs). Earlier issues (#2–#17) are in Swedish; new ones aren't.
+- `.github/ISSUE_TEMPLATE/` has two templates: **Bug** (what happened, expected, repro) and **Feature** (Goal / Scope / Acceptance — same structure the earlier issues used, just translated).
 - Pick the matching template when filing. Blank issues still work but the template is the default path.
 
 ## Secrets and environment variables
