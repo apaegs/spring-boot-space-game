@@ -43,12 +43,8 @@ public class Ship {
     @Column(nullable = false)
     private int y;
 
-    /** Set together with {@link #destinationY}, or both null. Cleared on arrival. */
-    @Column(name = "destination_x")
-    private Integer destinationX;
-
-    @Column(name = "destination_y")
-    private Integer destinationY;
+    // destination_x/y removed in V4 — what a ship is currently doing lives in
+    // the ship_orders queue, not on the ship row. See DOMAIN.md "ShipOrder".
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -65,5 +61,15 @@ public class Ship {
         if (createdAt == null) {
             createdAt = OffsetDateTime.now();
         }
+    }
+
+    /**
+     * Set a new position. The DB enforces 0 ≤ x,y < 100 via CHECK constraints —
+     * passing out-of-range values throws at flush time. Used by MoveOrderHandler
+     * inside the tick processor's transaction.
+     */
+    public void moveTo(int x, int y) {
+        this.x = x;
+        this.y = y;
     }
 }
