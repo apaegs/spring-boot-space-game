@@ -15,6 +15,9 @@ import type { OrderKind, ShipDto, ShipOrderDto } from '../../types/api'
  */
 type SelectedShipPanelProps = {
     ship: ShipDto
+    /** Current world tick — surfaced in the info view so the panel doesn't
+     * feel "frozen" when the header is partially scrolled / not in view. */
+    currentTick: number | undefined
     /** Called when the player picks "Move" from the action menu. Parent then
      * enables targeting mode on the map. */
     onPickMoveTarget: () => void
@@ -22,7 +25,7 @@ type SelectedShipPanelProps = {
 
 const ORDERS_POLL_MS = 5000
 
-export function SelectedShipPanel({ ship, onPickMoveTarget }: SelectedShipPanelProps) {
+export function SelectedShipPanel({ ship, currentTick, onPickMoveTarget }: SelectedShipPanelProps) {
     const [view, setView] = useState<'info' | 'orders'>('info')
 
     return (
@@ -47,19 +50,21 @@ export function SelectedShipPanel({ ship, onPickMoveTarget }: SelectedShipPanelP
                 </nav>
             </header>
 
-            {view === 'info' && <InfoView ship={ship} />}
+            {view === 'info' && <InfoView ship={ship} currentTick={currentTick} />}
             {view === 'orders' && <OrdersView ship={ship} onPickMoveTarget={onPickMoveTarget} />}
         </section>
     )
 }
 
-function InfoView({ ship }: { ship: ShipDto }) {
+function InfoView({ ship, currentTick }: { ship: ShipDto; currentTick: number | undefined }) {
     return (
         <dl className="ship-info">
             <dt>Position</dt>
             <dd>
                 ({ship.x}, {ship.y})
             </dd>
+            <dt>World tick</dt>
+            <dd>{currentTick ?? '—'}</dd>
             <dt>Created</dt>
             <dd>{new Date(ship.createdAt).toLocaleDateString()}</dd>
         </dl>

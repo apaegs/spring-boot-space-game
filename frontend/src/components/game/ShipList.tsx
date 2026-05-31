@@ -6,6 +6,9 @@ import type { ShipDto } from '../../types/api'
 
 type ShipListProps = {
     ships: ShipDto[]
+    /** True only while the very first fetch is in flight. Lets us show
+     * "Loading…" instead of the false "no ships yet" empty state. */
+    isLoading: boolean
 }
 
 /**
@@ -13,7 +16,7 @@ type ShipListProps = {
  * and the main view's camera). `+ New ship` POSTs to `/api/ships`, refreshes
  * the list, and auto-selects the new ship.
  */
-export function ShipList({ ships }: ShipListProps) {
+export function ShipList({ ships, isLoading }: ShipListProps) {
     const { selectedShipId, setSelectedShipId } = useSelectedShip()
     const queryClient = useQueryClient()
 
@@ -44,9 +47,11 @@ export function ShipList({ ships }: ShipListProps) {
                 </button>
             </header>
 
-            {ships.length === 0 ? (
-                <p className="ship-list__empty">Loading…</p>
-            ) : (
+            {ships.length === 0 && isLoading && <p className="ship-list__empty">Loading…</p>}
+            {ships.length === 0 && !isLoading && (
+                <p className="ship-list__empty">No ships yet. Click "+ New" to create one.</p>
+            )}
+            {ships.length > 0 && (
                 <ul className="ship-list__items">
                     {ships.map((ship) => {
                         const isSelected = ship.id === selectedShipId
