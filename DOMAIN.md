@@ -51,6 +51,10 @@ Mothership. In v1: exactly one per User, enforced in application logic (not as a
 
 **Tick behavior**: if `destination_x/y` is set, each tick advances the ship 1 step toward the destination (Chebyshev — 8-direction, diagonal counts as 1 step). When `(x, y) == (destination_x, destination_y)`, the destination is cleared.
 
+**Spawn**: new ships are placed at the center of the grid `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Random spawn was considered but rejected to keep the v1 test loop predictable.
+
+**Name**: auto-generated as `"<username>'s ship"` at registration. Player-chosen names are deferred (see open question 4 below) — when added, only the default at registration changes.
+
 ### Planet
 
 Pre-seeded point of interest on the map.

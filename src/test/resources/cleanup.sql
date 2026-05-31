@@ -5,4 +5,5 @@
 --
 -- Do NOT truncate flyway_schema_history — Flyway tracks migrations there and a wiped
 -- history would re-run migrations on the next test, breaking everything.
+TRUNCATE TABLE ships CASCADE;
 TRUNCATE TABLE users CASCADE;
