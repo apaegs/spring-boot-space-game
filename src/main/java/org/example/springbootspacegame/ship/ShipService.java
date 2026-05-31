@@ -38,11 +38,12 @@ public class ShipService {
     }
 
     @Transactional(readOnly = true)
-    public Ship getForUser(UUID userId) {
-        return shipRepository.findByUserId(userId)
+    public ShipDto getForUser(UUID userId) {
+        Ship ship = shipRepository.findByUserId(userId)
                 // Should not happen for a registered user — auto-create runs in the same
                 // transaction as user creation. Return 404 if it ever does, rather than 500.
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No ship for user"));
+        return ShipDto.from(ship);
     }
 
     private static String defaultShipName(String username) {

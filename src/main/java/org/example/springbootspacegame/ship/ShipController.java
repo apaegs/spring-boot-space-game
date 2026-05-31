@@ -29,6 +29,6 @@ public class ShipController {
                 || !(auth.getPrincipal() instanceof AuthenticatedUser principal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        return ShipDto.from(shipService.getForUser(principal.getUserId()));
+        return shipService.getForUser(principal.getUserId());
     }
 }

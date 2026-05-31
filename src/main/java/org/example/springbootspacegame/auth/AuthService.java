@@ -20,7 +20,7 @@ public class AuthService {
     private final ShipService shipService;
 
     @Transactional
-    public User register(RegisterRequest request) {
+    public MeResponse register(RegisterRequest request) {
         // Pre-checks give a clean 409 in the common case. The DB unique indexes
         // (see V1__create_users.sql) are still the source of truth and protect against
         // the race where two concurrent registrations both pass these checks.
@@ -53,17 +53,18 @@ public class AuthService {
         // If ship creation fails, the user insert rolls back — there is no "user without a ship"
         // state to ever observe (v1 invariant: 1 user = 1 ship). See issue #4.
         shipService.createForUser(saved.getId(), saved.getUsername());
-        return saved;
+        return MeResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
-    public User getCurrentUser() {
+    public MeResponse getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()
                 || !(auth.getPrincipal() instanceof AuthenticatedUser principal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        return userRepository.findById(principal.getUserId())
+        User user = userRepository.findById(principal.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        return MeResponse.from(user);
     }
 }
