@@ -1,3 +1,4 @@
+.env
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
@@ -32,5 +33,7 @@ build/
 ### VS Code ###
 .vscode/
 
-### jte ###
-/jte-classes/
+### Frontend ###
+node_modules/
+dist/
+.env.local
