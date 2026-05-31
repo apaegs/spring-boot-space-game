@@ -62,4 +62,14 @@ public class Ship {
             createdAt = OffsetDateTime.now();
         }
     }
+
+    /**
+     * Set a new position. The DB enforces 0 ≤ x,y < 100 via CHECK constraints —
+     * passing out-of-range values throws at flush time. Used by MoveOrderHandler
+     * inside the tick processor's transaction.
+     */
+    public void moveTo(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
 }
