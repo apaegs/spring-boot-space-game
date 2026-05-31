@@ -27,4 +27,13 @@ public interface ShipOrderRepository extends JpaRepository<ShipOrder, UUID> {
      * only cancel orders on their own ship.
      */
     Optional<ShipOrder> findByIdAndShipId(UUID id, UUID shipId);
+
+    /**
+     * Distinct ship IDs that have at least one order in any of the given statuses.
+     * Used by the tick processor to scope "which ships need processing this tick"
+     * to just the ones with queued work — most ships idle most of the time.
+     */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT DISTINCT o.shipId FROM ShipOrder o WHERE o.status IN :statuses")
+    List<UUID> findDistinctShipIdsByStatusIn(@org.springframework.data.repository.query.Param("statuses") List<OrderStatus> statuses);
 }

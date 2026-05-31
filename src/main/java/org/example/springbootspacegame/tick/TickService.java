@@ -4,19 +4,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.springbootspacegame.world.WorldState;
 import org.example.springbootspacegame.world.WorldStateRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Owns the tick lifecycle: advance the world clock, then dispatch the hook for
- * per-tick game logic (ship movement, future order processing, etc.).
+ * Owns the tick lifecycle: advance the world clock, then publish a {@link TickEvent}
+ * so per-tick subsystems (ship order processing, future systems) can do their work.
  *
- * <p>The hook is intentionally an inline placeholder in v1. When {@code #11}
- * (ship movement) lands it'll either: (a) become a method that calls
- * {@code shipMovementService.advanceMotion(tick)} directly, or (b) be replaced
- * with Spring's {@code ApplicationEventPublisher} so any number of per-tick
- * services can listen without {@code TickService} knowing about them. Both
- * patterns work; pick when the second listener appears.
+ * <p>The event is published synchronously within this method's transaction, but each
+ * listener that mutates DB state should open its own transaction so one listener's
+ * failure doesn't roll back the tick or other listeners' progress
+ * (see {@code ShipTickProcessor}).
  */
 @Slf4j
 @Service
@@ -26,9 +25,10 @@ public class TickService {
     private static final short WORLD_ID = 1;
 
     private final WorldStateRepository worldStateRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
-     * Advance the world by one tick and run per-tick hooks. Called by
+     * Advance the world by one tick and notify per-tick listeners. Called by
      * {@link TickScheduler} on a cron, and by tests directly for deterministic
      * verification (no waiting for the scheduler).
      */
@@ -41,14 +41,8 @@ public class TickService {
                 .orElseThrow(() -> new IllegalStateException(
                         "World state missing — V3 migration may not have run"));
         long tick = state.getCurrentTick();
-        onTick(tick);
+        log.debug("Tick {}", tick);
+        eventPublisher.publishEvent(new TickEvent(tick, state.getLastTickAt()));
         return tick;
-    }
-
-    /**
-     * Per-tick hook. Empty for v1 — ship movement etc. will plug in here in #11.
-     */
-    private void onTick(long tickNumber) {
-        log.debug("Tick {}", tickNumber);
     }
 }
