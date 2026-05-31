@@ -54,7 +54,7 @@ public class AuthService {
         // user-without-a-ship state to observe. Players can create additional
         // ships later via POST /api/ships (issue #32). Pass null for the desired
         // name so ShipService generates the default "<username>'s ship".
-        shipService.createForUser(saved.getId(), saved.getUsername(), null);
+        shipService.createForNewUser(saved.getId(), saved.getUsername());
         return MeResponse.from(saved);
     }
 
