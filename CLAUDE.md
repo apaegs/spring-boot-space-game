@@ -1,114 +1,135 @@
 # CLAUDE.md
 
-Den här filen riktar sig till två läsare: **kompisen som onboardas** och **Claude som agent**. Båda ska kunna läsa den och direkt börja jobba i projektet utan att fråga.
+This file is for two readers: **the friend being onboarded** and **Claude the agent**. Both should be able to read it and start working in the project without asking.
 
-## Vad projektet är
+## What the project is
 
-Ett 2D, tick-baserat multiplayer-spel i webbläsaren — inspirerat av Utopia, Star Kingdoms och Clash of Titans. Varje spelare har ett "kingdom" som producerar resurser och armé över tid. Världen tickar i intervaller (t.ex. var X:e minut) och spelare lägger order asynkront. Inte realtids-strategi, inte heller hot-seat — närmast en webbaserad ekonomi/krigssim där "att vara aktiv" betyder att logga in och fatta beslut, inte att klicka snabbt.
+A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid with planets and stars. The player sets a destination, the ship moves 1 tile per tick, and on arrival at a planet the player can land and interact. The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
 
-## Kör projektet
+Detailed domain model: see [DOMAIN.md](DOMAIN.md).
+
+## Run the project
 
 ```sh
-./mvnw spring-boot:run          # Startar app + Postgres (via docker-compose-auto)
-./mvnw verify                   # Bygger + tester
-./mvnw test                     # Bara tester
-docker compose up -d            # Bara Postgres (om du inte vill köra appen)
+./mvnw spring-boot:run          # Starts the app + Postgres (via docker-compose-auto)
+./mvnw verify                   # Builds + runs tests
+./mvnw test                     # Tests only
+docker compose up -d            # Postgres only (if you don't want to run the app)
 ```
 
-Appen på http://localhost:8080.
+App on http://localhost:8080.
 
 ## Frontend
 
-- **React + Vite** i `frontend/`. Backend exponerar REST under `/api/**`.
-- **PixiJS** för 2D-kartan — en `<canvas>` monterad i en React-komponent. Pixi-koden lever isolerad från React-trädet (Pixi äger sin egen render-loop); React syncar bara state in via props/refs och läser ut event via callbacks.
-- **Inte** Phaser — overkill för tick-baserat.
-- Animerade siffror via en lättviktig lib (t.ex. `framer-motion` eller `react-spring`); ingen anledning att skriva egna easing-funktioner.
-- State: börja med React state + `@tanstack/react-query` för server-state. Lägg inte till Redux/Zustand innan det faktiskt behövs.
+- **React + Vite** in `frontend/`. Backend exposes REST under `/api/**`.
+- **PixiJS** for the 2D map — a `<canvas>` mounted in a React component. Pixi code lives isolated from the React tree (Pixi owns its own render loop); React only syncs state in via props/refs and reads events back via callbacks.
+- **Not** Phaser — overkill for tick-based.
+- Animated numbers via a lightweight lib (e.g. `framer-motion` or `react-spring`); no reason to write your own easing functions.
+- State: start with React state + `@tanstack/react-query` for server state. Don't reach for Redux/Zustand before it's actually needed.
 
-## Kodkonventioner
+## Code conventions
 
-### Paketstruktur
-Paketera **per domän**, inte per teknisk lagrtyp:
-```
+### Package structure
+Package **by domain**, not by technical layer:
+```text
 org.example.springbootspacegame
-├── kingdom/        # Entity, Repository, Service, Controller för Kingdom
-├── resource/       # ... för Resource
-├── tick/           # Tick-scheduler och world state
-└── auth/           # Användare, login, registrering
+├── ship/           # Entity, Repository, Service, Controller for Ship
+├── planet/         # ... for Planet
+├── world/          # WorldState + grid-related logic
+├── tick/           # Tick scheduler
+└── auth/           # User, login, registration
 ```
-Inte `controllers/`, `services/`, `repositories/` på toppnivå.
+Not `controllers/`, `services/`, `repositories/` at the top level.
 
-### Lager
-- **Controller**: tunna. Tar emot DTO, anropar Service, returnerar DTO. Ingen affärslogik.
-- **Service**: all affärslogik. Transaktionsgränser här (`@Transactional`).
-- **Repository**: Spring Data interfaces. Inga custom @Query om derived names räcker.
-- **Entity vs DTO**: aldrig exponera JPA-entities via REST. Mappa explicit till DTO i Service-lagret.
+### Layers
+- **Controller**: thin. Takes a DTO, calls the Service, returns a DTO. No business logic.
+- **Service**: all business logic. Transaction boundaries live here (`@Transactional`).
+- **Repository**: Spring Data interfaces. No custom `@Query` if derived names suffice.
+- **Entity vs DTO**: never expose JPA entities through REST. Map explicitly to DTO in the Service layer.
 
 ### Lombok
-Använd `@RequiredArgsConstructor` för constructor-injection och `@Getter`/`@Setter` sparsamt. **Inte** `@Data` på entities (equals/hashCode på JPA-entities är en fälla).
+Use `@RequiredArgsConstructor` for constructor injection and `@Getter`/`@Setter` sparingly. **Not** `@Data` on entities (equals/hashCode on JPA entities is a trap).
 
-### Testnamngivning
-`<KlassUnderTest>Test` för unit, `<KlassUnderTest>IT` för integration. Integration tests använder Testcontainers — **mocka aldrig databasen**.
+### Test naming
+`<ClassUnderTest>Test` for unit, `<ClassUnderTest>IT` for integration. Integration tests use Testcontainers — **never mock the database**.
 
 ### Migrations
-Schema-ändringar görs **alltid** via Flyway. Filer i `src/main/resources/db/migration/` med format `V<n>__<beskrivning>.sql`. Aldrig `spring.jpa.hibernate.ddl-auto=update` — den står på `validate` av en anledning.
+Schema changes go **always** through Flyway. Files in `src/main/resources/db/migration/` with the format `V<n>__<description>.sql`. Never `spring.jpa.hibernate.ddl-auto=update` — it's on `validate` for a reason.
 
-## Arbetsflöde
+## Workflow
 
-### Branchar
-- `feature/<kort-beskrivning>` för nya features
-- `fix/<kort-beskrivning>` för buggfixar
-- `chore/<kort-beskrivning>` för städning, deps, CI
-- Aldrig direkt-push till `main`
+### Branches
+- `feature/<short-description>` for new features
+- `fix/<short-description>` for bug fixes
+- `chore/<short-description>` for cleanup, deps, CI
+- Never push directly to `main`
 
 ### Commits
-Fri text på engelska, men hålla varje commit fokuserad på en sak. Imperativ form ("Add tick scheduler", inte "Added" eller "Adds"). Kroppen får förklara *varför* om det inte är uppenbart.
+Free-form text in English, but keep each commit focused on one thing. Imperative mood ("Add tick scheduler", not "Added" or "Adds"). The body may explain *why* if it isn't obvious.
 
 ### PRs
-- Länka issue: `Closes #N`
-- Beskrivning ska säga *varför*, inte bara *vad* (diffen visar vad)
-- Håll dem små (< ~400 rader diff). Stora PRs är svåra att granska seriöst — dela upp.
-- En review krävs. CI måste vara grön.
+- Link the issue: `Closes #N`
+- Description should say *why*, not just *what* (the diff shows what)
+- Keep them small (< ~400 lines of diff). Large PRs are hard to review seriously — split them.
+- One review required. CI must be green.
 - Squash and merge.
 
-## Secrets och miljövariabler
+## Secrets and environment variables
 
-- **Allt känsligt går via `.env`** (gitignored). Mall: `.env.example` (committad, inga riktiga värden).
-- Spring läser `.env` automatiskt via `spring.config.import=optional:file:.env[.properties]`. Format: properties-stil (`key=value`, ingen `export`-prefix).
-- `compose.yaml` läser `POSTGRES_*` med fallback till defaults — lokala devs kan strunta i `.env` helt.
-- Lägg till nya secrets så här:
-  1. Lägg raden i `.env.example` med tomt eller placeholder-värde.
-  2. Lägg det riktiga värdet i din lokala `.env`.
-  3. Dela värdet med kompisen out-of-band (Signal / lösenordshanterare / muntligt).
-- CI/prod-secrets ska in i GitHub Actions Secrets eller hosting-providerns equivalent — **inte** i `.env` committad nånstans.
-- Om en secret hamnar i git: rotera den omedelbart. Att ta bort den i en ny commit räcker inte — den finns kvar i historiken.
+- **Anything sensitive goes in `.env`** (gitignored). Template: `.env.example` (committed, no real values).
+- Spring reads `.env` automatically via `spring.config.import=optional:file:.env[.properties]`. Format: properties style (`key=value`, no `export` prefix).
+- `compose.yaml` reads `POSTGRES_*` with fallback to defaults — local devs can skip `.env` entirely.
+- Add a new secret like this:
+  1. Add the line to `.env.example` with an empty or placeholder value.
+  2. Add the real value in your local `.env`.
+  3. Share the value with the friend out-of-band (Signal / password manager / verbally).
+- CI/prod secrets belong in GitHub Actions Secrets or the hosting provider's equivalent — **not** in a committed `.env` anywhere.
+- If a secret ends up in git: rotate it immediately. Removing it in a new commit is not enough — it's still in history.
 
-## Vad man INTE ska göra
+## What NOT to do
 
-- **Pusha direkt till `main`** — gå alltid via PR.
-- **Mocka databasen i integrationstester** — använd Testcontainers. Mock-tester ljuger om Postgres-specifikt beteende.
-- **Lägga affärslogik i Controllers** — controllern är ett transport-lager.
-- **Exponera JPA-entities via REST** — alltid mappa till DTO.
-- **Ändra DB-schemat utan Flyway-migration**.
-- **Använda `@Data` på entities** (equals/hashCode-trubbel).
-- **Committa `.env`, API-nycklar, lösenord eller andra secrets** — se sektionen ovan.
+- **Push directly to `main`** — always go through a PR.
+- **Mock the database in integration tests** — use Testcontainers. Mock-based tests lie about Postgres-specific behavior.
+- **Put business logic in Controllers** — controllers are a transport layer.
+- **Expose JPA entities through REST** — always map to a DTO.
+- **Change the DB schema without a Flyway migration**.
+- **Use `@Data` on entities** (equals/hashCode trouble).
+- **Commit `.env`, API keys, passwords or other secrets** — see the section above.
 
-## Domän-vokabulär
+## Domain vocabulary
 
-Använd dessa termer konsekvent i kod, commits, issues och diskussioner.
+Use these terms consistently in code, commits, issues and discussion. Detailed model in [DOMAIN.md](DOMAIN.md).
 
-- **Kingdom** — En spelares spelade enhet. En spelare har exakt ett kingdom åt gången.
-- **Tick** — Ett återkommande tidsintervall då världen processas: resurser produceras, byggen blir klara, händelser triggas. Schemaläggs centralt, inte per kingdom.
-- **Resource** — Producerbara/förbrukbara råvaror (t.ex. guld, mat, järn). Hör till ett Kingdom.
-- **Order** — Ett beslut en spelare lägger som verkställs vid nästa (eller framtida) tick. Asynkron input — spelaren behöver inte vara online när ordern processas.
-- **World** — Den globala staten som alla kingdoms delar (kartan, nuvarande tick-nummer, etc.).
-- **Player / User** — Personen bakom kontot. Skiljt från Kingdom — en User kan teoretiskt ha flera kingdoms över tid men bara ett aktivt.
+- **User** — The person behind the account. Authentication identity, no gameplay state.
+- **Ship** — The player's mothership. In v1 every User has exactly one Ship; the schema permits more for future fleet support.
+- **Planet** — A pre-seeded point on the map that a Ship can land on.
+- **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, Planet) have coordinates.
+- **Tick** — A recurring time interval (≤ 1 min) when the world is processed: ships in motion are advanced, future feature effects are triggered. Scheduled centrally.
+- **World** — The global state all players share (grid size, current tick). A single `WorldState` singleton row.
 
-Termer som **inte** används (för att undvika förvirring): "turn" (vi har ticks, inte turer), "round" (en spelvärld har inte rundor), "match" (det är inte session-baserat).
+Terms that are **not** used (to avoid confusion):
+- "turn" — we have ticks, not turns.
+- "round" / "match" — this isn't a session-based game world.
+- "kingdom" / "empire" — this isn't a kingdom-builder.
 
-## När du som Claude jobbar i repot
+## When Claude works in this repo
 
-- Kolla [README.md](README.md) först om något i den här filen är otydligt.
-- Föreslå inte kod som bryter mot konventionerna ovan utan att flagga det.
-- Innan du föreslår en ny dependency: kolla om Spring Boot-parentet redan hanterar den.
-- Om en uppgift känns för stor för en PR: föreslå att dela upp den i flera issues istället för att bara köra på.
+- Check [README.md](README.md) first if anything in this file is unclear.
+- Don't suggest code that breaks the conventions above without flagging it.
+- Before suggesting a new dependency: check whether the Spring Boot parent already manages it.
+- If a task feels too large for one PR: propose splitting it into multiple issues instead of just charging ahead.
+
+### Keep the docs alive
+
+After every task that changes the project — new feature, new dependency, new architecture decision, new domain term, new convention — **go back and verify** that the following files are still correct:
+
+- `CLAUDE.md` — domain vocabulary, package structure, conventions, anti-patterns
+- `DOMAIN.md` — entity schema, deferred features, forward-compat notes
+- `README.md` — stack, getting-started commands, project structure
+
+If anything is wrong or incomplete:
+1. Flag it to the user with a short description of what no longer holds.
+2. Propose a concrete change (ideally as a diff or exact new text).
+3. Include the doc change in the **same PR** as the code change — not a follow-up PR. Stale docs that survive a week are enough to confuse someone.
+
+This applies even when the user *didn't* ask for a doc update. Silent documentation drift is one of the biggest reasons CLAUDE.md loses value over time.
