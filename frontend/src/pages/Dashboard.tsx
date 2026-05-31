@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { listPlanets } from '../api/planets'
 import { getMyShip } from '../api/ship'
 import { getWorld } from '../api/world'
 import { useAuth } from '../auth/AuthContext'
 import { OrdersPanel } from '../components/OrdersPanel'
+import { WorldMapView } from '../components/WorldMapView'
 
 /** Refetch ship + world this often so movement / ticks visibly advance. */
 const POLL_MS = 5000
@@ -22,6 +24,15 @@ export function Dashboard() {
         queryKey: ['world'],
         queryFn: ({ signal }) => getWorld(signal),
         refetchInterval: POLL_MS,
+    })
+
+    // Planets are static (seeded by V5 — they don't change). One fetch ever;
+    // no polling. Cache them with a long staleTime so navigating away and
+    // back doesn't refetch.
+    const { data: planets } = useQuery({
+        queryKey: ['planets'],
+        queryFn: ({ signal }) => listPlanets(signal),
+        staleTime: Infinity,
     })
 
     const onLogout = async () => {
@@ -51,12 +62,16 @@ export function Dashboard() {
                 </dl>
             </section>
 
+            <section className="map-card">
+                <WorldMapView planets={planets ?? []} ship={ship ?? null} />
+            </section>
+
             <section className="orders-card">
                 <h2>Orders</h2>
                 <OrdersPanel />
             </section>
 
-            <p className="muted">Map + click-to-travel coming in the next commits.</p>
+            <p className="muted">Click planets to travel — coming in the next commit.</p>
         </main>
     )
 }

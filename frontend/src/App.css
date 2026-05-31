@@ -1,10 +1,16 @@
 /* Minimal styling. Real visual design is deferred. */
 
-.auth-page,
-.dashboard {
+.auth-page {
     font-family: system-ui, sans-serif;
     max-width: 480px;
     margin: 4rem auto;
+    padding: 2rem;
+}
+
+.dashboard {
+    font-family: system-ui, sans-serif;
+    max-width: 680px;
+    margin: 2rem auto;
     padding: 2rem;
 }
 
@@ -68,11 +74,22 @@
 }
 
 .ship-card,
-.orders-card {
+.orders-card,
+.map-card {
     border: 1px solid #ddd;
     border-radius: 6px;
     padding: 1rem 1.25rem;
     margin-top: 1.5rem;
+}
+
+.map-card {
+    /* Pixi canvas is 600px; widen the dashboard wrapper a bit so it fits. */
+    display: flex;
+    justify-content: center;
+}
+
+.world-map {
+    line-height: 0;
 }
 
 .ship-card h2,
