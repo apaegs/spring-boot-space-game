@@ -1,26 +1,27 @@
 ---
 name: Feature
-about: Ny funktion eller förbättring
+about: A new feature or improvement
 title: ""
 labels: ["feature"]
 ---
 
-**Mål**
+**Goal**
 
-<!-- Vad vill vi uppnå? Vad är problemet som denna funktion löser, eller vilken
-     upplevelse vill spelaren ha? -->
+<!-- What are we trying to achieve? What problem does this solve, or what
+     experience do we want the player to have? -->
 
-**Omfattning**
+**Scope**
 
-<!-- Vad ingår — konkret, helst som punktlista. Nämn också vad som *inte* ingår
-     när det är värt att klargöra (t.ex. "ingen frontend i denna issue"). -->
+<!-- What's included — concretely, ideally as a bullet list. Also call out
+     what's *not* included when it's worth clarifying (e.g. "no frontend in
+     this issue"). -->
 
 -
 -
 
-**Acceptans**
+**Acceptance criteria**
 
-<!-- Hur vet vi att issuen är klar? Konkreta, helst testbara kriterier. -->
+<!-- How do we know the issue is done? Concrete, ideally testable criteria. -->
 
 -
 -
