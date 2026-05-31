@@ -118,3 +118,18 @@ Termer som **inte** används (för att undvika förvirring):
 - Föreslå inte kod som bryter mot konventionerna ovan utan att flagga det.
 - Innan du föreslår en ny dependency: kolla om Spring Boot-parentet redan hanterar den.
 - Om en uppgift känns för stor för en PR: föreslå att dela upp den i flera issues istället för att bara köra på.
+
+### Håll dokumentationen levande
+
+Efter varje uppgift som ändrar projektet — ny feature, ny dependency, nytt arkitekturval, ny domän-term, ny konvention — **gå tillbaka och kontrollera** att följande filer fortfarande är korrekta:
+
+- `CLAUDE.md` — domän-vokabulär, paketstruktur, konventioner, anti-patterns
+- `DOMAIN.md` — entitets-schema, deferred features, forward-compat-notes
+- `README.md` — stack, kom-igång-kommandon, projektstruktur
+
+Om något står fel eller är ofullständigt:
+1. Flagga det för användaren med en kort beskrivning av vad som inte stämmer längre.
+2. Föreslå konkret ändring (helst som diff eller exakt ny text).
+3. Inkludera dokumentationsändringen i **samma PR** som kod-ändringen — inte som en följd-PR. Stale docs som lever en vecka räcker för att förvirra någon.
+
+Det här gäller även när användaren *inte* ber om en doc-uppdatering. Tysta dokumentations-drift är en av de största orsakerna till att CLAUDE.md tappar värde över tid.
