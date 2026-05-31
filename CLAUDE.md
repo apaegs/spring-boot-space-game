@@ -31,7 +31,7 @@ App on http://localhost:8080.
 
 ### Package structure
 Package **by domain**, not by technical layer:
-```
+```text
 org.example.springbootspacegame
 ├── ship/           # Entity, Repository, Service, Controller for Ship
 ├── planet/         # ... for Planet

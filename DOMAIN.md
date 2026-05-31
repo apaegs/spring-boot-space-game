@@ -1,32 +1,32 @@
-# Domän-modell
+# Domain Model
 
-Levande dokument för spelets kärn-domän. Uppdateras i **samma PR** som schema-ändringar — annars hamnar koden ur sync med dokumentationen.
+Living document for the game's core domain. Updated in the **same PR** as any schema change — otherwise the code drifts out of sync with the docs.
 
-> Statusen här är **v1-design** (issue #2). Öppna designfrågor diskuteras i issue-tråden tills de stängs.
+> Status here is **v1 design** (issue #2). Open design questions are discussed in the issue thread until they're closed.
 
-## Översikt
+## Overview
 
-Spelet är ett 2D rymd-explorer på en fix 100×100-grid. Varje spelare styr ett moderskepp som kan röra sig mellan rutor och interagera med planeter. Världen tickar i bakgrunden (≤ 1 min) och processar alla skepp i rörelse.
+The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with planets. The world ticks in the background (≤ 1 min) and processes any ships in motion.
 
-```
-User (1) ─── (1..N) Ship           # 1 i v1, schemat tillåter fler
+```text
+User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
                      │
-                     ▼ befinner sig på
-              (x, y) på Grid (100×100)
+                     ▼ located at
+              (x, y) on Grid (100×100)
                      │
-                     ▼ kan landa på
-                  Planet (pre-seedad)
+                     ▼ can land on
+                  Planet (pre-seeded)
 
 WorldState (singleton)              # current_tick, last_tick_at, grid_width, grid_height
 ```
 
-## Entiteter
+## Entities
 
 ### User
 
-Autentiseringsidentitet — personen bakom kontot.
+Authentication identity — the person behind the account.
 
-| Fält            | Typ          | Anteckning                  |
+| Field           | Type         | Notes                       |
 |-----------------|--------------|-----------------------------|
 | id              | UUID         | PK                          |
 | username        | VARCHAR(32)  | unique, case-insensitive    |
@@ -36,79 +36,79 @@ Autentiseringsidentitet — personen bakom kontot.
 
 ### Ship
 
-Moderskepp. I v1: exakt ett per User, säkerställt i applikationslogik (inte DB-constraint — se [Forward-compat](#forward-compat) nedan).
+Mothership. In v1: exactly one per User, enforced in application logic (not as a DB constraint — see [Forward-compat](#forward-compat) below).
 
-| Fält            | Typ          | Anteckning                                              |
+| Field           | Type         | Notes                                                   |
 |-----------------|--------------|---------------------------------------------------------|
 | id              | UUID         | PK                                                      |
-| user_id         | UUID         | FK → user.id, **inte unique** (för framtida fleet)      |
-| name            | VARCHAR(64)  | spelar-valt eller genererat                             |
+| user_id         | UUID         | FK → user.id, **not unique** (for future fleet support) |
+| name            | VARCHAR(64)  | player-chosen or generated                              |
 | x               | INT          | 0 ≤ x < grid_width                                      |
 | y               | INT          | 0 ≤ y < grid_height                                     |
-| destination_x   | INT NULL     | satt = i rörelse; null = står still                     |
-| destination_y   | INT NULL     | samma constraint som destination_x (båda eller ingen)   |
+| destination_x   | INT NULL     | set = in motion; null = stationary                      |
+| destination_y   | INT NULL     | same constraint as destination_x (both or neither)      |
 | created_at      | TIMESTAMPTZ  | default `now()`                                         |
 
-**Tick-beteende**: om `destination_x/y` är satt, flyttar varje tick skeppet 1 steg närmre destinationen (Chebyshev — 8-riktning, diagonalt räknas som 1 steg). När `(x, y) == (destination_x, destination_y)`, nollställs destinationen.
+**Tick behavior**: if `destination_x/y` is set, each tick advances the ship 1 step toward the destination (Chebyshev — 8-direction, diagonal counts as 1 step). When `(x, y) == (destination_x, destination_y)`, the destination is cleared.
 
 ### Planet
 
-Pre-seedad punkt av intresse på kartan.
+Pre-seeded point of interest on the map.
 
-| Fält         | Typ          | Anteckning                                |
+| Field        | Type         | Notes                                     |
 |--------------|--------------|-------------------------------------------|
 | id           | UUID         | PK                                        |
-| x            | INT          | unique tillsammans med y                  |
+| x            | INT          | unique together with y                    |
 | y            | INT          |                                           |
 | name         | VARCHAR(64)  |                                           |
 | description  | TEXT         |                                           |
 
-Seedas i Flyway-migration (`V2__seed_planets.sql`). Initial planet-lista bestäms i issue #2-tråden.
+Seeded in a Flyway migration (`V2__seed_planets.sql`). Initial planet list is decided in the issue #2 thread.
 
 ### WorldState
 
-Singleton-tabell. Bara en rad någonsin.
+Singleton table. Only ever one row.
 
-| Fält           | Typ          | Anteckning                              |
+| Field          | Type         | Notes                                    |
 |----------------|--------------|------------------------------------------|
 | id             | SMALLINT     | PK, CHECK (id = 1)                       |
-| current_tick   | BIGINT       | ökar med 1 per tick                      |
-| last_tick_at   | TIMESTAMPTZ  | senast processade tick                   |
+| current_tick   | BIGINT       | increments by 1 per tick                 |
+| last_tick_at   | TIMESTAMPTZ  | most recently processed tick             |
 | grid_width     | INT          | default 100                              |
 | grid_height    | INT          | default 100                              |
 
-## Vad som inte är med i v1
+## Not in v1
 
-Med motivering — så vi vet *varför* något skjutits, inte bara *att* det är skjutet.
+With justification — so we know *why* something was deferred, not just *that* it was.
 
-| Koncept              | Varför uppskjutet                                                                 | Hur det införs senare                                     |
+| Concept              | Why deferred                                                                      | How it's introduced later                                 |
 |----------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------|
-| **Fleet** (>1 skepp) | YAGNI för v1, men schemat är redo                                                 | App-logik öppnar för flera Ship-rader; ev. `is_mothership` |
-| **Crew / besättning** | Inte del av v1-loopen                                                            | Ny `crew_member`-tabell, FK → ship.id                     |
-| **Order-tabell**     | Endast MOVE finns; `Ship.destination_x/y` är "stående order"                      | Ny `orders`-tabell när BUILD/TRAIN/ATTACK införs          |
-| **Resources, cargo** | Inte del av v1-loopen                                                             | Egen design-issue                                         |
-| **Star** (entitet)   | Stjärnor är ren UI-dekoration tills de har gameplay-funktion                      | Lägg till tabell när de blir interaktiva                  |
-| **Tile-tabell**      | 10 000 tomma rutor är onödigt att lagra                                           | Skapas vid behov om tiles får attribut (terräng, etc.)    |
+| **Fleet** (>1 ship)  | YAGNI for v1, but the schema is ready                                             | App logic allows multiple Ship rows; maybe `is_mothership` |
+| **Crew**             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                     |
+| **Order table**      | Only MOVE exists; `Ship.destination_x/y` is the "standing order"                  | New `orders` table once BUILD/TRAIN/ATTACK are added      |
+| **Resources, cargo** | Not part of the v1 loop                                                           | Its own design issue                                      |
+| **Star** (entity)    | Stars are pure UI decoration until they have gameplay function                    | Add a table when they become interactive                  |
+| **Tile table**       | 10,000 empty cells aren't worth storing                                           | Created if/when tiles get attributes (terrain, etc.)      |
 
 ## Forward-compat
 
-`Ship.user_id` har **inte** unique-constraint trots att v1 har 1 skepp per User. Anledning: när fleet införs ska det vara en ren applikationsändring (lyft constraint i koden) — inte en migration. DB-constraints är dyra att backtracka.
+`Ship.user_id` has **no** unique constraint even though v1 has 1 ship per User. Reason: when fleet support arrives, it should be a pure application-logic change (lift the constraint in code) — not a migration. DB constraints are expensive to walk back.
 
-API:t `GET /api/ship` (singular) accepterar URL-breaking change till `/api/ships` när fleet införs, eftersom inga externa konsumenter finns.
+The `GET /api/ship` (singular) endpoint accepts a URL-breaking change to `/api/ships` when fleet arrives, since there are no external consumers.
 
-## Process: lägga till nytt domän-koncept
+## Process: adding a new domain concept
 
-1. Öppna ett **design-issue** först. Bestäm fält, relationer och vad som *inte* ska med.
-2. Uppdatera DOMAIN.md i samma PR som Flyway-migrationen och JPA-entiteten — annars hamnar dokumentationen ur sync.
-3. Om termen är ny: uppdatera även [CLAUDE.md](CLAUDE.md):s domän-vokabulär.
-4. Posta slutgiltigt schema som kommentar i design-issuet och stäng det.
+1. Open a **design issue** first. Decide fields, relationships, and what's *not* in scope.
+2. Update DOMAIN.md in the same PR as the Flyway migration and JPA entity — otherwise the docs drift out of sync.
+3. If the term is new: update the domain vocabulary in [CLAUDE.md](CLAUDE.md) as well.
+4. Post the final schema as a comment on the design issue and close it.
 
-## Öppna designfrågor (v1)
+## Open design questions (v1)
 
-Diskuteras i issue #2:
+Discussed in issue #2:
 
-1. 4- eller 8-riktnings rörelse? *Rek: 8-riktning (Chebyshev).*
-2. Auto-landning på planet-tile eller separat `LAND`-order? *Rek: auto-landning.*
-3. Antal planeter och placering? Konkret seed-data.
-4. Skepp-namn: spelar-valt eller genererat?
-5. Kollision: kan två skepp dela tile? *Rek: ja, ingen kollision i v1.*
+1. 4- or 8-direction movement? *Rec: 8-direction (Chebyshev).*
+2. Auto-landing on a planet tile, or a separate `LAND` order? *Rec: auto-landing.*
+3. Number of planets and placement? Concrete seed data.
+4. Ship name: player-chosen or generated?
+5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*

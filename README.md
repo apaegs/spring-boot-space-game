@@ -65,7 +65,7 @@ More detail on conventions in [CLAUDE.md](CLAUDE.md).
 
 ## Project structure
 
-```
+```text
 .
 ├── src/main/java/org/example/springbootspacegame/   # Backend code, packaged by domain
 ├── src/main/resources/
