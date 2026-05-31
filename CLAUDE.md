@@ -53,6 +53,9 @@ Use `@RequiredArgsConstructor` for constructor injection and `@Getter`/`@Setter`
 ### Test naming
 `<ClassUnderTest>Test` for unit, `<ClassUnderTest>IT` for integration. Integration tests use Testcontainers — **never mock the database**.
 
+### Integration test setup
+Annotate `*IT` classes with `@IntegrationTest` (defined in `src/test/java/.../IntegrationTest.java`). The meta-annotation bundles `@SpringBootTest`, `@Import(TestcontainersConfiguration.class)`, and a `@Sql` that truncates per-test tables before every test method — so tests don't leak state into each other. If a new table is added, list it in `src/test/resources/cleanup.sql` (or rely on `CASCADE` from a FK to an already-listed table).
+
 ### Migrations
 Schema changes go **always** through Flyway. Files in `src/main/resources/db/migration/` with the format `V<n>__<description>.sql`. Never `spring.jpa.hibernate.ddl-auto=update` — it's on `validate` for a reason.
 
