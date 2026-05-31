@@ -1,0 +1,14 @@
+:root {
+    font:
+        16px/1.45 system-ui,
+        'Segoe UI',
+        Roboto,
+        sans-serif;
+    color-scheme: light dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+}

@@ -129,6 +129,7 @@ With justification — so we know *why* something was deferred, not just *that* 
 | **Resources, cargo**                 | Not part of the v1 loop                                                           | Its own design issue                                            |
 | **Star** (entity)                    | Stars are pure UI decoration until they have gameplay function                    | Add a table when they become interactive                        |
 | **Tile table**                       | 10,000 empty cells aren't worth storing                                           | Created if/when tiles get attributes (terrain, etc.)            |
+| **Sprite art**                       | v1 renders geometric primitives (cyan triangle for ship, amber circles for planets) so the map works without an art pass | Native sprite size will be **16×16**, rendered at integer multiples (no downscale — pixel art breaks). Whole 100×100 grid at native = 1600×1600 canvas, so when sprites arrive the map switches from "fit everything" to a camera that follows the ship. See `WorldMap.ts` — swap `Graphics` for `Sprite.from(...)`. |
 
 ## Forward-compat
 
