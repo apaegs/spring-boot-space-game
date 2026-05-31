@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.springbootspacegame.ship.Ship;
 import org.example.springbootspacegame.ship.ShipRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -25,7 +26,19 @@ public class ShipTickProcessor {
     private final ShipOrderRepository orderRepository;
     private final OrderHandlerRegistry handlerRegistry;
 
-    @Transactional
+    /**
+     * {@code REQUIRES_NEW} is load-bearing here. This method is invoked from
+     * {@code ShipOrderTickListener.onTick}, which fires synchronously inside
+     * {@code TickService.advanceTick()}'s {@code @Transactional} scope. With
+     * the default {@code REQUIRED} propagation, processOneShip would join
+     * that outer transaction — a per-ship failure would mark the *tick*
+     * transaction rollback-only, undoing the tick counter advance and every
+     * other ship's work. {@code REQUIRES_NEW} suspends the outer transaction
+     * and gives each ship its own physical one, so the per-ship error
+     * containment in the listener actually works as the comment there
+     * claims.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processOneShip(UUID shipId) {
         Ship ship = shipRepository.findById(shipId).orElse(null);
         if (ship == null) {

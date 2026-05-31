@@ -94,7 +94,7 @@ Pre-seeded point of interest on the map. Only meaningful target for the LAND ord
 | name         | VARCHAR(64)  | display name                              |
 | description  | TEXT         | flavor text                               |
 
-Seeded in `V5__seed_planets.sql`. The v1 seed includes Earth at `(50, 50)` (the spawn tile) and a handful of others scattered across the grid — enough to give early players concrete targets to MOVE/LAND on.
+Seeded in `V5__create_planets.sql`. The v1 seed includes Earth at `(50, 50)` (the spawn tile) and a handful of others scattered across the grid — enough to give early players concrete targets to MOVE/LAND on.
 
 ### WorldState
 
@@ -112,7 +112,7 @@ Singleton table. Only ever one row.
 
 **Tick concurrency**: v1 runs a single application instance and the `@Scheduled` framework serializes calls within a JVM, so two ticks can't overlap. The increment is also a single SQL `UPDATE`, so even if a future bug triggers it concurrently the row never goes missing. Horizontal scaling will need cross-node coordination (Shedlock or similar) — deferred.
 
-**Tick hook**: `TickService.advanceTick()` publishes a `TickEvent` via Spring's `ApplicationEventPublisher`. Per-tick game logic (`ShipOrderProcessor` and friends) listens via `@EventListener`. New per-tick subsystems plug in by adding a listener — `TickService` never has to change.
+**Tick hook**: `TickService.advanceTick()` publishes a `TickEvent` via Spring's `ApplicationEventPublisher`. Per-tick game logic listens via `@EventListener` — currently `ShipOrderTickListener` (dispatches to `ShipTickProcessor.processOneShip` per ship). New per-tick subsystems plug in by adding a listener; `TickService` never has to change.
 
 ## Not in v1
 
