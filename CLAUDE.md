@@ -68,11 +68,16 @@ Schema changes go **always** through Flyway. Files in `src/main/resources/db/mig
 Free-form text in English, but keep each commit focused on one thing. Imperative mood ("Add tick scheduler", not "Added" or "Adds"). The body may explain *why* if it isn't obvious.
 
 ### PRs
+- A template (`.github/pull_request_template.md`) pre-fills Summary / Why / Test plan when you open a PR — use it, don't delete sections.
 - Link the issue: `Closes #N`
 - Description should say *why*, not just *what* (the diff shows what)
 - Keep them small (< ~400 lines of diff). Large PRs are hard to review seriously — split them.
 - One review required. CI must be green.
 - Squash and merge.
+
+### Issues
+- `.github/ISSUE_TEMPLATE/` has two templates: **Bug** (what happened, expected, repro) and **Feature** (Mål, Omfattning, Acceptans — same format as #2/#3/#4).
+- Pick the matching template when filing. Blank issues still work but the template is the default path.
 
 ## Secrets and environment variables
 
