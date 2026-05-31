@@ -34,7 +34,7 @@ public class AuthController {
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public MeResponse register(@Valid @RequestBody RegisterRequest request) {
-        return MeResponse.from(authService.register(request));
+        return authService.register(request);
     }
 
     @PostMapping("/login")
@@ -83,6 +83,6 @@ public class AuthController {
 
     @GetMapping("/me")
     public MeResponse me() {
-        return MeResponse.from(authService.getCurrentUser());
+        return authService.getCurrentUser();
     }
 }
