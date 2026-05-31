@@ -6,15 +6,18 @@ Living document for the game's core domain. Updated in the **same PR** as any sc
 
 ## Overview
 
-The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with planets. The world ticks in the background (≤ 1 min) and processes any ships in motion.
+The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with planets. The world ticks in the background (≤ 1 min) and processes any orders queued on ships.
+
+Players queue a sequence of orders (MOVE, LAND, …) on their ship, log out, and the world advances those orders one step per tick while they're away.
 
 ```text
 User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
+                     │  └─── (0..N) ShipOrder       # queue of pending/active orders
                      │
                      ▼ located at
               (x, y) on Grid (100×100)
                      │
-                     ▼ can land on
+                     ▼ can LAND on
                   Planet (pre-seeded)
 
 WorldState (singleton)              # current_tick, last_tick_at, grid_width, grid_height
@@ -45,29 +48,53 @@ Mothership. In v1: exactly one per User, enforced in application logic (not as a
 | name            | VARCHAR(64)  | player-chosen or generated                              |
 | x               | INT          | 0 ≤ x < grid_width                                      |
 | y               | INT          | 0 ≤ y < grid_height                                     |
-| destination_x   | INT NULL     | set = in motion; null = stationary                      |
-| destination_y   | INT NULL     | same constraint as destination_x (both or neither)      |
 | created_at      | TIMESTAMPTZ  | default `now()`                                         |
 
-**Tick behavior**: if `destination_x/y` is set, each tick advances the ship 1 step toward the destination (Chebyshev — 8-direction, diagonal counts as 1 step). When `(x, y) == (destination_x, destination_y)`, the destination is cleared.
+**Position vs. orders**: a ship is at a single tile `(x, y)`. What it's currently *doing* lives in the order queue (see `ShipOrder` below), not on the ship row. Earlier v1 drafts had `destination_x/y` columns directly on the ship; those were dropped in V4 when the orders queue replaced them.
 
-**Spawn**: new ships are placed at the center of the grid `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Random spawn was considered but rejected to keep the v1 test loop predictable.
+**Spawn**: new ships are placed at the center of the grid `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Random spawn was considered but rejected to keep the v1 test loop predictable. Note: Earth is also seeded at `(50, 50)`, so every new player starts standing on their home planet.
 
 **Name**: auto-generated as `"<username>'s ship"` at registration. Player-chosen names are deferred (see open question 4 below) — when added, only the default at registration changes.
 
+### ShipOrder
+
+A pending or completed instruction in a ship's queue. The game loop pulls the oldest non-finished order per ship each tick and processes one step toward its completion.
+
+| Field         | Type         | Notes                                                                |
+|---------------|--------------|----------------------------------------------------------------------|
+| id            | UUID         | PK                                                                   |
+| ship_id       | UUID         | FK → ship.id, `ON DELETE CASCADE`                                    |
+| kind          | VARCHAR(32)  | `'MOVE'`, `'LAND'`, … extensible. Validated at the application layer |
+| params        | JSONB        | order-type-specific payload (e.g. `{ "x": 50, "y": 50 }` for MOVE)   |
+| status        | VARCHAR(16)  | `PENDING` → `ACTIVE` → `COMPLETED` (or `CANCELLED`)                  |
+| created_at    | TIMESTAMPTZ  | default `now()` — drives queue order                                 |
+| started_at    | TIMESTAMPTZ  | set when status → ACTIVE                                             |
+| completed_at  | TIMESTAMPTZ  | set when status → COMPLETED                                          |
+
+**Queue semantics**: orders are processed FIFO per ship (`ORDER BY created_at`). At any moment, a ship has at most one `ACTIVE` order and any number of `PENDING` orders behind it. Completed orders stay in the table for audit/history (cleanup is deferred).
+
+**Why JSONB for params**: order types are intentionally extensible. WAIT needs `{ ticks }`, SCAN needs `{ radius }`, MINE needs `{ resourceType }`. Adding a new order type is a new `OrderHandler` strategy class + a new `kind` value — no schema change.
+
+**v1 order types**:
+
+| Kind  | Params                  | Behavior                                                                 |
+|-------|-------------------------|--------------------------------------------------------------------------|
+| MOVE  | `{ "x": int, "y": int }` | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival. |
+| LAND  | `{}`                    | Validate that ship is on a planet tile. If yes, complete in one tick. If no, fail and CANCEL with reason. |
+
 ### Planet
 
-Pre-seeded point of interest on the map.
+Pre-seeded point of interest on the map. Only meaningful target for the LAND order in v1.
 
 | Field        | Type         | Notes                                     |
 |--------------|--------------|-------------------------------------------|
 | id           | UUID         | PK                                        |
-| x            | INT          | unique together with y                    |
-| y            | INT          |                                           |
-| name         | VARCHAR(64)  |                                           |
-| description  | TEXT         |                                           |
+| x            | INT          | unique together with y, `0 ≤ x < 100`     |
+| y            | INT          | `0 ≤ y < 100`                             |
+| name         | VARCHAR(64)  | display name                              |
+| description  | TEXT         | flavor text                               |
 
-Seeded in a Flyway migration (`V2__seed_planets.sql`). Initial planet list is decided in the issue #2 thread.
+Seeded in `V5__seed_planets.sql`. The v1 seed includes Earth at `(50, 50)` (the spawn tile) and a handful of others scattered across the grid — enough to give early players concrete targets to MOVE/LAND on.
 
 ### WorldState
 
@@ -85,24 +112,31 @@ Singleton table. Only ever one row.
 
 **Tick concurrency**: v1 runs a single application instance and the `@Scheduled` framework serializes calls within a JVM, so two ticks can't overlap. The increment is also a single SQL `UPDATE`, so even if a future bug triggers it concurrently the row never goes missing. Horizontal scaling will need cross-node coordination (Shedlock or similar) — deferred.
 
+**Tick hook**: `TickService.advanceTick()` publishes a `TickEvent` via Spring's `ApplicationEventPublisher`. Per-tick game logic (`ShipOrderProcessor` and friends) listens via `@EventListener`. New per-tick subsystems plug in by adding a listener — `TickService` never has to change.
+
 ## Not in v1
 
 With justification — so we know *why* something was deferred, not just *that* it was.
 
-| Concept              | Why deferred                                                                      | How it's introduced later                                 |
-|----------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------|
-| **Fleet** (>1 ship)  | YAGNI for v1, but the schema is ready                                             | App logic allows multiple Ship rows; maybe `is_mothership` |
-| **Crew**             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                     |
-| **Order table**      | Only MOVE exists; `Ship.destination_x/y` is the "standing order"                  | New `orders` table once BUILD/TRAIN/ATTACK are added      |
-| **Resources, cargo** | Not part of the v1 loop                                                           | Its own design issue                                      |
-| **Star** (entity)    | Stars are pure UI decoration until they have gameplay function                    | Add a table when they become interactive                  |
-| **Tile table**       | 10,000 empty cells aren't worth storing                                           | Created if/when tiles get attributes (terrain, etc.)      |
+| Concept                              | Why deferred                                                                      | How it's introduced later                                       |
+|--------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| **Fleet** (>1 ship)                  | YAGNI for v1, but the schema is ready                                             | App logic allows multiple Ship rows; maybe `is_mothership`      |
+| **Crew**                             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                           |
+| **Ship speed**                       | All ships move 1 tile/tick in v1                                                  | New `speed` column on `ship`; MOVE handler loops `speed` times  |
+| **Ship types & capabilities**        | One ship class in v1; later "scout can SCAN, miner can MINE, freighter cannot"    | Add `ship_type` (FK or enum) + per-type allowed `OrderHandler` list |
+| **More order kinds** (WAIT/SCAN/MINE/TRADE/ATTACK/…) | Schema + dispatcher are ready; just need handler classes | New `OrderHandler` impl per kind + entry in the order-kind whitelist |
+| **Completed-order cleanup**          | History stays in `ship_orders` forever in v1; not enough rows to matter           | Scheduled archive job, or partitioning by `completed_at`        |
+| **Resources, cargo**                 | Not part of the v1 loop                                                           | Its own design issue                                            |
+| **Star** (entity)                    | Stars are pure UI decoration until they have gameplay function                    | Add a table when they become interactive                        |
+| **Tile table**                       | 10,000 empty cells aren't worth storing                                           | Created if/when tiles get attributes (terrain, etc.)            |
 
 ## Forward-compat
 
 `Ship.user_id` has **no** unique constraint even though v1 has 1 ship per User. Reason: when fleet support arrives, it should be a pure application-logic change (lift the constraint in code) — not a migration. DB constraints are expensive to walk back.
 
 The `GET /api/ship` (singular) endpoint accepts a URL-breaking change to `/api/ships` when fleet arrives, since there are no external consumers.
+
+`ShipOrder.kind` is `VARCHAR` (not an `ENUM` type) so adding a new order kind is a code-only change. Validation happens at the application layer against the set of registered `OrderHandler` strategies.
 
 ## Process: adding a new domain concept
 
@@ -113,10 +147,10 @@ The `GET /api/ship` (singular) endpoint accepts a URL-breaking change to `/api/s
 
 ## Open design questions (v1)
 
-Discussed in issue #2:
+Originally raised in issue #2; some are now resolved by later issues.
 
-1. 4- or 8-direction movement? *Rec: 8-direction (Chebyshev).*
-2. Auto-landing on a planet tile, or a separate `LAND` order? *Rec: auto-landing.*
-3. Number of planets and placement? Concrete seed data.
-4. Ship name: player-chosen or generated?
+1. ~~4- or 8-direction movement?~~ **Resolved**: 8-direction (Chebyshev). See ShipOrder.MOVE.
+2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11**: explicit LAND order, queued alongside MOVE. Lets players script "fly to Mars, then land" as a single chain.
+3. ~~Number of planets and placement?~~ **Resolved in #11**: 6 hand-placed planets in `V5__seed_planets.sql`.
+4. Ship name: player-chosen or generated? Currently generated (`"<username>'s ship"`). Player-chosen deferred until there's a UI to choose.
 5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*
