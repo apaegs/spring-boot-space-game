@@ -8,6 +8,18 @@ A 2D, tick-based space game in the browser — closest comparison is a web-based
 
 Detailed domain model: see [DOMAIN.md](DOMAIN.md).
 
+## Quality bar
+
+This is a real game we want to ship and be proud of, not a weekend hack. When you face a choice between "the proper fix" and "the quick workaround":
+
+- **Prefer the proper fix.** If `npm ci` complains about a lockfile mismatch, fix the actual platform-deps problem — don't switch to `npm install` to silence it. If a test is flaky, find the race — don't add a retry. If a CodeRabbit finding looks low-value, skip it only when the fix genuinely costs more than the value, never because "the project is small".
+- **No "it's just a hobby project" excuses.** That mindset compounds. Every shortcut taken today narrows what's possible tomorrow.
+- **Velocity is fine. Sloppy is not.** Move fast when the change is small and understood. Slow down when it isn't. They aren't opposites.
+
+When unsure whether a fix is proper enough: surface the trade-off and ask. "Here are three approaches, which fits?" beats "I picked the quick one because hobby". The right answer is sometimes still the quick one — but it should be a deliberate choice, not a default.
+
+This applies retroactively too. If you spot an old shortcut in the codebase, flag it as a follow-up — don't leave it because "it was the standard at the time".
+
 ## Run the project
 
 ```sh
