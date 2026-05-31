@@ -1,6 +1,8 @@
 # spring-boot-space-game
 
-Ett 2D, tick-baserat multiplayer-spel i webbläsaren, inspirerat av Utopia, Star Kingdoms och Clash of Titans. Spelarna bygger upp sina riken parallellt och världen tickar fram resurser/händelser i bakgrunden.
+Ett 2D, tick-baserat rymdspel i webbläsaren — närmast en webbaserad släkting till Elite. Varje spelare styr ett moderskepp på en 100×100-grid med planeter och stjärnor. Världen tickar i bakgrunden, skepp flyttas mot sina destinationer, och spelaren loggar in då och då för att fatta beslut.
+
+Detaljerad domän-modell: se [DOMAIN.md](DOMAIN.md).
 
 ## Stack
 

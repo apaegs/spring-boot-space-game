@@ -4,7 +4,9 @@ Den här filen riktar sig till två läsare: **kompisen som onboardas** och **Cl
 
 ## Vad projektet är
 
-Ett 2D, tick-baserat multiplayer-spel i webbläsaren — inspirerat av Utopia, Star Kingdoms och Clash of Titans. Varje spelare har ett "kingdom" som producerar resurser och armé över tid. Världen tickar i intervaller (t.ex. var X:e minut) och spelare lägger order asynkront. Inte realtids-strategi, inte heller hot-seat — närmast en webbaserad ekonomi/krigssim där "att vara aktiv" betyder att logga in och fatta beslut, inte att klicka snabbt.
+Ett 2D, tick-baserat rymdspel i webbläsaren — närmast en webbaserad släkting till Elite. Varje spelare styr ett moderskepp på en fix 100×100-grid med planeter och stjärnor. Spelaren lägger destination, skeppet rör sig 1 ruta per tick, och vid ankomst till en planet kan spelaren landa och interagera. Världen tickar i bakgrunden (≤ 1 min) oberoende av om någon är inloggad — det är inte realtids-strategi, snarare "logga in då och då och fatta beslut".
+
+Detaljerad domän-modell: se [DOMAIN.md](DOMAIN.md).
 
 ## Kör projektet
 
@@ -31,10 +33,11 @@ Appen på http://localhost:8080.
 Paketera **per domän**, inte per teknisk lagrtyp:
 ```
 org.example.springbootspacegame
-├── kingdom/        # Entity, Repository, Service, Controller för Kingdom
-├── resource/       # ... för Resource
-├── tick/           # Tick-scheduler och world state
-└── auth/           # Användare, login, registrering
+├── ship/           # Entity, Repository, Service, Controller för Ship
+├── planet/         # ... för Planet
+├── world/          # WorldState + grid-relaterad logik
+├── tick/           # Tick-scheduler
+└── auth/           # User, login, registrering
 ```
 Inte `controllers/`, `services/`, `repositories/` på toppnivå.
 
@@ -95,16 +98,19 @@ Fri text på engelska, men hålla varje commit fokuserad på en sak. Imperativ f
 
 ## Domän-vokabulär
 
-Använd dessa termer konsekvent i kod, commits, issues och diskussioner.
+Använd dessa termer konsekvent i kod, commits, issues och diskussioner. Detaljerad modell i [DOMAIN.md](DOMAIN.md).
 
-- **Kingdom** — En spelares spelade enhet. En spelare har exakt ett kingdom åt gången.
-- **Tick** — Ett återkommande tidsintervall då världen processas: resurser produceras, byggen blir klara, händelser triggas. Schemaläggs centralt, inte per kingdom.
-- **Resource** — Producerbara/förbrukbara råvaror (t.ex. guld, mat, järn). Hör till ett Kingdom.
-- **Order** — Ett beslut en spelare lägger som verkställs vid nästa (eller framtida) tick. Asynkron input — spelaren behöver inte vara online när ordern processas.
-- **World** — Den globala staten som alla kingdoms delar (kartan, nuvarande tick-nummer, etc.).
-- **Player / User** — Personen bakom kontot. Skiljt från Kingdom — en User kan teoretiskt ha flera kingdoms över tid men bara ett aktivt.
+- **User** — Personen bakom kontot. Autentiseringsidentitet, ingen gameplay-state.
+- **Ship** — Spelarens moderskepp. I v1 har varje User exakt ett Ship; schemat tillåter fler för framtida fleet.
+- **Planet** — Pre-seedad punkt på kartan som ett Ship kan landa på.
+- **Tile** — En ruta på 100×100-griden, identifierad av `(x, y)`. Lagras inte som tabell — bara intressanta saker (Ship, Planet) har koordinater.
+- **Tick** — Ett återkommande tidsintervall (≤ 1 min) då världen processas: skepp i rörelse flyttas, framtida feature-effekter triggas. Schemaläggs centralt.
+- **World** — Den globala staten alla spelare delar (grid-storlek, current tick). En `WorldState`-singleton-rad.
 
-Termer som **inte** används (för att undvika förvirring): "turn" (vi har ticks, inte turer), "round" (en spelvärld har inte rundor), "match" (det är inte session-baserat).
+Termer som **inte** används (för att undvika förvirring):
+- "turn" — vi har ticks, inte turer.
+- "round" / "match" — det är ingen session-baserad spelvärld.
+- "kingdom" / "empire" — det här är inte ett kingdom-builder-spel.
 
 ## När du som Claude jobbar i repot
 
