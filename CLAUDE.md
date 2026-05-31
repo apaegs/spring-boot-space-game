@@ -50,6 +50,9 @@ Not `controllers/`, `services/`, `repositories/` at the top level.
 ### Lombok
 Use `@RequiredArgsConstructor` for constructor injection and `@Getter`/`@Setter` sparingly. **Not** `@Data` on entities (equals/hashCode on JPA entities is a trap).
 
+### DTOs
+Use Java **records**, not Lombok-annotated classes. Records give immutability, `equals`/`hashCode`/`toString` for free, and signal "this is a value type, not an entity" at a glance. Convert from JPA entities with a static factory on the record, e.g. `ShipDto.from(ship)`.
+
 ### Test naming
 `<ClassUnderTest>Test` for unit, `<ClassUnderTest>IT` for integration. Integration tests use Testcontainers — **never mock the database**.
 
