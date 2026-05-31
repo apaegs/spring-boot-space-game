@@ -33,6 +33,20 @@ Om du föredrar att starta Postgres separat:
 docker compose up -d
 ```
 
+### Miljövariabler / .env
+
+Kopiera mallen och fyll i värden om du behöver avvika från defaults:
+```sh
+cp .env.example .env
+```
+
+- `.env` är **gitignored** — committa aldrig den.
+- `compose.yaml` läser `POSTGRES_*` med fallback till defaults, så du kan strunta i `.env` för lokal utveckling.
+- Spring laddar `.env` via `spring.config.import` om filen finns. Format är vanliga properties (`key=value`).
+- För framtida API-nycklar: lägg till raden i `.env.example` (utan värdet) **och** i `.env` (med värdet).
+
+**Dela aldrig secrets via git, issues, PRs eller chatt-historik.** Använd Signal, en lösenordshanterare eller säg det muntligt. Om en secret läckts: rotera den omedelbart, lägg inte bara till en commit som "tar bort den".
+
 ## Arbetsflöde
 
 Vi kör tydligt PR-flöde — **ingen direkt-push till `main`**.

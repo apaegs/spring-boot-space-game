@@ -71,6 +71,18 @@ Fri text på engelska, men hålla varje commit fokuserad på en sak. Imperativ f
 - En review krävs. CI måste vara grön.
 - Squash and merge.
 
+## Secrets och miljövariabler
+
+- **Allt känsligt går via `.env`** (gitignored). Mall: `.env.example` (committad, inga riktiga värden).
+- Spring läser `.env` automatiskt via `spring.config.import=optional:file:.env[.properties]`. Format: properties-stil (`key=value`, ingen `export`-prefix).
+- `compose.yaml` läser `POSTGRES_*` med fallback till defaults — lokala devs kan strunta i `.env` helt.
+- Lägg till nya secrets så här:
+  1. Lägg raden i `.env.example` med tomt eller placeholder-värde.
+  2. Lägg det riktiga värdet i din lokala `.env`.
+  3. Dela värdet med kompisen out-of-band (Signal / lösenordshanterare / muntligt).
+- CI/prod-secrets ska in i GitHub Actions Secrets eller hosting-providerns equivalent — **inte** i `.env` committad nånstans.
+- Om en secret hamnar i git: rotera den omedelbart. Att ta bort den i en ny commit räcker inte — den finns kvar i historiken.
+
 ## Vad man INTE ska göra
 
 - **Pusha direkt till `main`** — gå alltid via PR.
@@ -79,7 +91,7 @@ Fri text på engelska, men hålla varje commit fokuserad på en sak. Imperativ f
 - **Exponera JPA-entities via REST** — alltid mappa till DTO.
 - **Ändra DB-schemat utan Flyway-migration**.
 - **Använda `@Data` på entities** (equals/hashCode-trubbel).
-- **Lägga commiterad config med secrets** — använd `.env.local` (gitignorerad) eller miljövariabler.
+- **Committa `.env`, API-nycklar, lösenord eller andra secrets** — se sektionen ovan.
 
 ## Domän-vokabulär
 
