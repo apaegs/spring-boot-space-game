@@ -35,10 +35,14 @@ public class AuthService {
                 passwordEncoder.encode(request.password())
         );
         try {
-            return userRepository.save(user);
+            // saveAndFlush (not save) so the INSERT executes inside this try block.
+            // Plain save() leaves the actual INSERT to commit time — outside this method —
+            // and the unique-constraint violation would escape as a generic 500 instead
+            // of being translated to 409 below.
+            return userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
             // Race: a concurrent request inserted the same username/email between the
-            // exists-check above and save. Translate Hibernate's 500 into a 409.
+            // exists-check above and the flush. Translate Hibernate's 500 into a 409.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username or email already registered", e);
         }
     }
