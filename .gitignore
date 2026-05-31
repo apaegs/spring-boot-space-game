@@ -37,3 +37,6 @@ build/
 node_modules/
 dist/
 .env.local
+
+### Claude local overrides ###
+CLAUDE.local.md
