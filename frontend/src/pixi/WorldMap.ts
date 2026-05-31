@@ -36,6 +36,7 @@ export class WorldMap {
         ship: 0x66ddff,
         shipSelected: 0xfff066,
         shipOutline: 0xffffff,
+        hover: 0x66ddff,
     }
 
     private app: Application | null = null
@@ -47,6 +48,7 @@ export class WorldMap {
     // Layers, all parented to worldLayer which carries the camera transform.
     private worldLayer: Container | null = null
     private gridLayer: Graphics | null = null
+    private hoverLayer: Graphics | null = null
     private planetsLayer: Container | null = null
     private shipsLayer: Container | null = null
 
@@ -55,6 +57,7 @@ export class WorldMap {
     private planets: PlanetDto[] = []
     private ships: ShipDto[] = []
     private selectedShipId: string | null = null
+    private hoverTile: { x: number; y: number } | null = null
 
     private onTileClick: ((x: number, y: number) => void) | null = null
     private onPlanetClick: ((planet: PlanetDto) => void) | null = null
@@ -78,16 +81,23 @@ export class WorldMap {
         hit.fill({ color: 0x000000, alpha: 0 })
         hit.eventMode = 'static'
         hit.on('pointerdown', (e: FederatedPointerEvent) => this.handleBackgroundClick(e))
+        hit.on('pointermove', (e: FederatedPointerEvent) => this.handleHover(e))
+        hit.on('pointerout', () => this.clearHover())
         app.stage.addChild(hit)
 
         // World layer holds everything that moves/zooms with the camera.
         this.worldLayer = new Container()
         app.stage.addChild(this.worldLayer)
 
+        // Grid first (bottom), hover next so it sits over the grid but under
+        // planets and ships — keeps the highlight from covering a planet's
+        // label or a ship's marker when the cursor lands on it.
         this.gridLayer = new Graphics()
+        this.hoverLayer = new Graphics()
         this.planetsLayer = new Container()
         this.shipsLayer = new Container()
         this.worldLayer.addChild(this.gridLayer)
+        this.worldLayer.addChild(this.hoverLayer)
         this.worldLayer.addChild(this.planetsLayer)
         this.worldLayer.addChild(this.shipsLayer)
 
@@ -101,6 +111,7 @@ export class WorldMap {
             this.app = null
             this.worldLayer = null
             this.gridLayer = null
+            this.hoverLayer = null
             this.planetsLayer = null
             this.shipsLayer = null
         }
@@ -242,25 +253,58 @@ export class WorldMap {
 
     private handleBackgroundClick(event: FederatedPointerEvent): void {
         if (!this.onTileClick) return
-        // Pointer coords are in screen space relative to the stage. Inverse
-        // the camera transform to get world (pixel) coords, then divide by
-        // tile size to get the tile.
-        const screenX = event.global.x
-        const screenY = event.global.y
+        const tile = this.screenToTile(event.global.x, event.global.y)
+        if (tile) this.onTileClick(tile.x, tile.y)
+    }
+
+    private handleHover(event: FederatedPointerEvent): void {
+        const tile = this.screenToTile(event.global.x, event.global.y)
+        if (tile === null) {
+            this.clearHover()
+            return
+        }
+        if (this.hoverTile?.x === tile.x && this.hoverTile?.y === tile.y) {
+            return // unchanged — skip the redraw
+        }
+        this.hoverTile = tile
+        this.renderHover()
+    }
+
+    private clearHover(): void {
+        if (this.hoverTile === null) return
+        this.hoverTile = null
+        this.renderHover()
+    }
+
+    private renderHover(): void {
+        if (!this.hoverLayer) return
+        this.hoverLayer.clear()
+        if (!this.hoverTile) return
+
+        // Highlight covers the whole tile cell. The tile-center math we use
+        // elsewhere needs adjusting back to the corner for a rect.
+        const x = this.hoverTile.x * WorldMap.TILE_PX
+        const y = this.hoverTile.y * WorldMap.TILE_PX
+        this.hoverLayer.rect(x, y, WorldMap.TILE_PX, WorldMap.TILE_PX)
+        this.hoverLayer.fill({ color: WorldMap.COLORS.hover, alpha: 0.18 })
+        this.hoverLayer.stroke({ color: WorldMap.COLORS.hover, alpha: 0.6, width: 0.5 })
+    }
+
+    /**
+     * Invert the camera transform: screen → world pixels → tile. Returns
+     * null if the pointer is outside the 100×100 grid (which happens at zoom
+     * 1.0 mostly never, but at zoom 4.0 quite a lot — the canvas extends
+     * past world edges).
+     */
+    private screenToTile(screenX: number, screenY: number): { x: number; y: number } | null {
         const halfCanvas = WorldMap.CANVAS_PX / 2
         const worldPx = (screenX - halfCanvas) / this.camera.zoom + this.camera.x * WorldMap.TILE_PX
         const worldPy = (screenY - halfCanvas) / this.camera.zoom + this.camera.y * WorldMap.TILE_PX
         const tileX = Math.floor(worldPx / WorldMap.TILE_PX)
         const tileY = Math.floor(worldPy / WorldMap.TILE_PX)
-        if (
-            tileX < 0 ||
-            tileX >= WorldMap.GRID_CELLS ||
-            tileY < 0 ||
-            tileY >= WorldMap.GRID_CELLS
-        ) {
-            return
-        }
-        this.onTileClick(tileX, tileY)
+        if (tileX < 0 || tileX >= WorldMap.GRID_CELLS) return null
+        if (tileY < 0 || tileY >= WorldMap.GRID_CELLS) return null
+        return { x: tileX, y: tileY }
     }
 
     private static tileToPx(x: number, y: number): { px: number; py: number } {
