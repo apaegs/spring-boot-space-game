@@ -1,6 +1,7 @@
 package org.example.springbootspacegame.auth;
 
 import lombok.RequiredArgsConstructor;
+import org.example.springbootspacegame.ship.ShipService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -16,6 +17,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ShipService shipService;
 
     @Transactional
     public User register(RegisterRequest request) {
@@ -34,17 +36,24 @@ public class AuthService {
                 request.email(),
                 passwordEncoder.encode(request.password())
         );
+        User saved;
         try {
             // saveAndFlush (not save) so the INSERT executes inside this try block.
             // Plain save() leaves the actual INSERT to commit time — outside this method —
             // and the unique-constraint violation would escape as a generic 500 instead
             // of being translated to 409 below.
-            return userRepository.saveAndFlush(user);
+            saved = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
             // Race: a concurrent request inserted the same username/email between the
             // exists-check above and the flush. Translate Hibernate's 500 into a 409.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username or email already registered", e);
         }
+
+        // Auto-create the player's starting mothership in the same transaction.
+        // If ship creation fails, the user insert rolls back — there is no "user without a ship"
+        // state to ever observe (v1 invariant: 1 user = 1 ship). See issue #4.
+        shipService.createForUser(saved.getId(), saved.getUsername());
+        return saved;
     }
 
     @Transactional(readOnly = true)
