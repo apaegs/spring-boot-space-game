@@ -1,0 +1,20 @@
+/* Minimal styling for the scaffold. Real UI lands in later commits. */
+.app {
+    font-family: system-ui, sans-serif;
+    max-width: 480px;
+    margin: 4rem auto;
+    padding: 2rem;
+    text-align: center;
+}
+
+.status {
+    font-size: 1.2rem;
+}
+
+.online {
+    color: #2e7d32;
+}
+
+.offline {
+    color: #c62828;
+}
