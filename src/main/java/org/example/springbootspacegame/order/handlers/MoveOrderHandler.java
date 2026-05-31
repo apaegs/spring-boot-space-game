@@ -5,7 +5,11 @@ import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderResult;
 import org.example.springbootspacegame.order.ShipOrder;
 import org.example.springbootspacegame.ship.Ship;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Map;
 
 /**
  * MOVE: each tick, take one Chebyshev step toward the target tile. Completes
@@ -17,6 +21,22 @@ public class MoveOrderHandler implements OrderHandler {
     @Override
     public OrderKind kind() {
         return OrderKind.MOVE;
+    }
+
+    @Override
+    public void validateParams(Map<String, Object> params) {
+        Object x = params.get("x");
+        Object y = params.get("y");
+        if (!(x instanceof Number) || !(y instanceof Number)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "MOVE requires numeric params 'x' and 'y'");
+        }
+        int xi = ((Number) x).intValue();
+        int yi = ((Number) y).intValue();
+        if (xi < 0 || xi >= 100 || yi < 0 || yi >= 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "MOVE target must be inside the 100x100 grid (0 <= x,y < 100)");
+        }
     }
 
     @Override
