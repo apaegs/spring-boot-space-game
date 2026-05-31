@@ -77,7 +77,7 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 - A template (`.github/pull_request_template.md`) pre-fills Summary / Why / Test plan when you open a PR — use it, don't delete sections.
 - Link the issue: `Closes #N`
 - Description should say *why*, not just *what* (the diff shows what)
-- Keep them small (< ~400 lines of diff). Large PRs are hard to review seriously — split them.
+- **Keep them focused.** Small (< ~400 lines) is the default and almost always right. Bigger is fine when the change is genuinely cohesive (e.g. introducing a new subsystem end-to-end), but be honest with yourself — "I'll save a round trip" isn't a good reason to bundle unrelated work. When in doubt, split.
 - One review required. CI must be green.
 - Squash and merge.
 
