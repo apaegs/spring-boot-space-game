@@ -16,6 +16,12 @@ type WorldMapViewProps = {
 /**
  * React wrapper around the PixiJS {@link WorldMap}. Owns the mount/unmount
  * lifecycle and forwards prop changes through the imperative API.
+ *
+ * <p>Props are mirrored into refs so the async {@code map.init()} lifecycle
+ * can apply the latest values when it resolves. Without that, the very first
+ * payload of planets/ships dropped on the floor: the {@code setPlanets}
+ * effect fires while {@code mapRef.current} is still null (init hadn't
+ * resolved yet), so the call is a no-op, and there's no re-render to retry it.
  */
 export function WorldMapView({
     planets,
@@ -27,12 +33,23 @@ export function WorldMapView({
     const containerRef = useRef<HTMLDivElement | null>(null)
     const mapRef = useRef<WorldMap | null>(null)
 
-    // Stash the latest callbacks in refs so we forward them without forcing
-    // the Pixi app to remount when the parent re-renders with new functions.
-    // Updated in an effect (not during render) to keep React 19 strict-mode
-    // happy.
+    // Mirror every prop into a ref so we can read the freshest value from
+    // inside the async init().then handler — which may run after this render
+    // and any subsequent renders.
+    const planetsRef = useRef(planets)
+    const shipsRef = useRef(ships)
+    const selectedShipIdRef = useRef(selectedShipId)
     const onTileClickRef = useRef(onTileClick)
     const onPlanetClickRef = useRef(onPlanetClick)
+    useEffect(() => {
+        planetsRef.current = planets
+    }, [planets])
+    useEffect(() => {
+        shipsRef.current = ships
+    }, [ships])
+    useEffect(() => {
+        selectedShipIdRef.current = selectedShipId
+    }, [selectedShipId])
     useEffect(() => {
         onTileClickRef.current = onTileClick
     }, [onTileClick])
@@ -51,6 +68,12 @@ export function WorldMapView({
                 map.destroy()
                 return
             }
+            // Apply the latest props (via refs) now that the renderer is
+            // alive. Otherwise the prop-watching effects below would have
+            // already fired against a null mapRef and the initial payload
+            // would be missing.
+            map.setPlanets(planetsRef.current)
+            map.setShips(shipsRef.current, selectedShipIdRef.current)
             map.setOnTileClick((x, y) => onTileClickRef.current?.(x, y))
             map.setOnPlanetClick((planet) => onPlanetClickRef.current?.(planet))
             mapRef.current = map
@@ -63,6 +86,8 @@ export function WorldMapView({
         }
     }, [])
 
+    // Subsequent updates: once mapRef is set, push through normally. The
+    // first render's payload was already applied inside init().then above.
     useEffect(() => {
         mapRef.current?.setPlanets(planets)
     }, [planets])

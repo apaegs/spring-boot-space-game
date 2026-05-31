@@ -194,6 +194,7 @@ class ShipOrderFlowIT {
         MockHttpSession alice = registerAndLogin("alice", "alice@example.com", "password-alice-1");
         MockHttpSession bob = registerAndLogin("bob", "bob@example.com", "password-bob-12");
         UUID aliceShipId = firstShipIdFor(alice);
+        UUID aliceOrderId = postOrder(alice, aliceShipId, "MOVE", Map.of("x", 70, "y", 70));
 
         mockMvc.perform(get("/api/ships/{shipId}/orders", aliceShipId).session(bob))
                 .andExpect(status().isNotFound());
@@ -203,6 +204,12 @@ class ShipOrderFlowIT {
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 70, "y": 70 } }
                                 """))
+                .andExpect(status().isNotFound());
+
+        // Cancel path too — ownership-404 should be uniform across verbs so
+        // Bob can't probe the existence of Alice's specific order id.
+        mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", aliceShipId, aliceOrderId)
+                        .session(bob))
                 .andExpect(status().isNotFound());
     }
 
