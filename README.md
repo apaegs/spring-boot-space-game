@@ -21,10 +21,15 @@ Requirements: JDK 25, Docker (for Postgres), Git.
 git clone <repo-url>
 cd spring-boot-space-game
 
-# 2. Start the backend — Spring detects compose.yaml and starts Postgres automatically
+# 2. Create your local .env (required — compose.yaml has no defaults)
+cp .env.example .env
+# Open .env and set POSTGRES_PASSWORD to a real value, e.g.
+#   openssl rand -base64 24
+
+# 3. Start the backend — Spring detects compose.yaml and starts Postgres automatically
 ./mvnw spring-boot:run
 
-# 3. Run tests
+# 4. Run tests (uses Testcontainers, ignores .env / compose.yaml)
 ./mvnw verify
 ```
 
@@ -37,17 +42,51 @@ docker compose up -d
 
 ### Environment variables / .env
 
-Copy the template and fill in values if you need to override defaults:
+`.env` is **required** — `compose.yaml` deliberately has no default
+credentials, so the backend won't start until you create one.
+
 ```sh
 cp .env.example .env
 ```
 
-- `.env` is **gitignored** — never commit it.
-- `compose.yaml` reads `POSTGRES_*` with fallback to defaults, so you can skip `.env` for local development.
-- Spring loads `.env` via `spring.config.import` if the file exists. The format is regular properties (`key=value`).
-- For future API keys: add the line to `.env.example` (without the value) **and** to `.env` (with the value).
+Then edit `.env` and set at minimum:
 
-**Never share secrets via git, issues, PRs or chat history.** Use Signal, a password manager, or say it verbally. If a secret leaks: rotate it immediately, don't just add a commit that "removes it."
+- `POSTGRES_DB` — any name (e.g. `spacegame`)
+- `POSTGRES_USER` — any name (e.g. `spacegame`)
+- `POSTGRES_PASSWORD` — **must be a real value**, generated locally. Don't
+  reuse a value from chat / docs / another machine. Example:
+  `openssl rand -base64 24`.
+
+Other notes:
+
+- `.env` is **gitignored** — never commit it.
+- The dev Postgres binds to `127.0.0.1:5432`, not `0.0.0.0`, so the container
+  isn't reachable from your LAN.
+- Spring loads `.env` via `spring.config.import` in `application.properties`.
+  Format is regular properties (`key=value`).
+- For future API keys: add the line to `.env.example` (without the value)
+  **and** to your local `.env` (with the value).
+
+**Never share secrets via git, issues, PRs or chat history.** Use Signal, a
+password manager, or say it verbally. If a secret leaks: rotate it
+immediately, don't just add a commit that "removes it."
+
+#### Rotating a leaked password
+
+If a `POSTGRES_PASSWORD` ever ends up somewhere it shouldn't (git, chat,
+screenshot), rotate it:
+
+```sh
+# Drop the local database volume — it stores the user with the old password,
+# and Postgres can't re-key it after first init.
+docker compose down -v
+
+# Set a new password in .env, then start fresh:
+./mvnw spring-boot:run
+```
+
+Flyway re-runs all migrations on the empty volume — local data is lost,
+which is fine for dev.
 
 ## Workflow
 

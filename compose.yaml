@@ -2,15 +2,22 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-spacegame}
-      POSTGRES_USER: ${POSTGRES_USER:-spacegame}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spacegame}
+      # No defaults — every dev sets these in their own .env. Removing the
+      # fallbacks is deliberate: it forces credentials to be a local choice
+      # per machine, not a value committed to the repo. See README "Setup"
+      # for the one-time .env creation step.
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      # Bind to 127.0.0.1, not the default 0.0.0.0 — keeps the dev Postgres
+      # off the LAN. Without this, anyone on the same network could hit
+      # localhost:5432 with whatever password happens to be in your .env.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-spacegame} -d $${POSTGRES_DB:-spacegame}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
