@@ -6,11 +6,16 @@ import { listPlanets } from '../api/planets'
 import { listMyShips } from '../api/ship'
 import { getWorld, listWorldShips } from '../api/world'
 import { GameHeader } from '../components/game/GameHeader'
-import { SelectedShipPanel } from '../components/game/SelectedShipPanel'
+import {
+    SelectedEntityPanel,
+    type SelectedEntityPanelProps,
+} from '../components/game/SelectedEntityPanel'
 import { ShipList } from '../components/game/ShipList'
 import { WorldMapView } from '../components/WorldMapView'
 import type { ShipOnMap } from '../pixi/WorldMap'
+import type { Selection } from '../selection/SelectionContext'
 import { useSelection } from '../selection/SelectionContext'
+import type { PlanetDto, PublicShipDto, ShipDto } from '../types/api'
 
 const POLL_MS = 5000
 
@@ -34,7 +39,7 @@ type ActionMode = { type: 'idle' } | { type: 'targetingMove'; shipId: string }
 
 export function Game() {
     const queryClient = useQueryClient()
-    const { selectedShipId, setSelection } = useSelection()
+    const { selection, selectedShipId, setSelection } = useSelection()
     const [actionMode, setActionMode] = useState<ActionMode>({ type: 'idle' })
 
     const shipsQuery = useQuery({
@@ -197,18 +202,50 @@ export function Game() {
 
             <aside className="game__sidebar">
                 <ShipList ships={ships} isLoading={shipsQuery.isPending} />
-                {selectedShip && (
-                    <SelectedShipPanel
-                        ship={selectedShip}
-                        currentTick={world?.currentTick}
-                        onPickMoveTarget={startMoveTargeting}
-                    />
-                )}
-                {/* Foreign-ship + planet info panels land in the next commit
-                    (SelectedShipPanel → SelectedEntityPanel refactor). For
-                    now, selecting a planet only updates selection state — the
-                    panel space below stays empty until the entity panel ships. */}
+                <SelectedEntityPanel
+                    {...resolveSelectedEntity({
+                        selection,
+                        ownShips: ships,
+                        worldShips: worldShipsQuery.data,
+                        planets,
+                        currentTick: world?.currentTick,
+                        onPickMoveTarget: startMoveTargeting,
+                    })}
+                />
             </aside>
         </div>
     )
+}
+
+/**
+ * Resolve the current {@link Selection} against the data we have on hand,
+ * producing the discriminated props for {@link SelectedEntityPanel}.
+ *
+ * <p>Foreign-ship lookups try the world-ships query first; if that hasn't
+ * loaded yet (or the ship has vanished between renders) we fall through
+ * to the empty state rather than rendering a stale row. Same fallback for
+ * planets and own ships — selection ids are opaque, the entities can
+ * legitimately disappear (deletion, race with a refetch).
+ */
+function resolveSelectedEntity(input: {
+    selection: Selection
+    ownShips: ShipDto[]
+    worldShips: PublicShipDto[] | undefined
+    planets: PlanetDto[]
+    currentTick: number | undefined
+    onPickMoveTarget: () => void
+}): SelectedEntityPanelProps {
+    const { selection, ownShips, worldShips, planets, currentTick, onPickMoveTarget } = input
+    if (!selection) return { kind: 'none' }
+
+    if (selection.kind === 'ship') {
+        const own = ownShips.find((s) => s.id === selection.id)
+        if (own) return { kind: 'ownShip', ship: own, currentTick, onPickMoveTarget }
+        const foreign = worldShips?.find((s) => s.id === selection.id)
+        if (foreign) return { kind: 'foreignShip', ship: foreign }
+        return { kind: 'none' }
+    }
+
+    const planet = planets.find((p) => p.id === selection.id)
+    return planet ? { kind: 'planet', planet } : { kind: 'none' }
 }

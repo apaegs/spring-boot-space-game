@@ -2,30 +2,105 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
 import { cancelOrder, createOrder, listOrders } from '../../api/orders'
-import type { OrderKind, ShipDto, ShipOrderDto } from '../../types/api'
+import type {
+    OrderKind,
+    PlanetDto,
+    PublicShipDto,
+    ShipDto,
+    ShipOrderDto,
+} from '../../types/api'
 
 /**
- * Bottom of the right sidebar. Shows the selected ship's info by default; the
- * "Orders" button swaps it to the queue + Add Order view.
+ * Bottom of the right sidebar — the "what did you just click?" surface.
+ * Branches by the resolved selection:
+ * <ul>
+ *   <li><b>Own ship</b>: Info + Orders tabs. Same affordances as v1.</li>
+ *   <li><b>Foreign ship</b>: Info only. No Orders tab — you can't queue
+ *       actions for ships you don't own. Position + name are public per
+ *       {@code PublicShipDto}.</li>
+ *   <li><b>Planet</b>: name, position, and the seeded description.</li>
+ *   <li><b>None</b>: a soft placeholder so the panel doesn't just vanish.
+ *       Hiding it was the alternative, but a stable layout reads better
+ *       than a jumping sidebar.</li>
+ * </ul>
  *
- * <p>Add Order opens an action-type menu. Picking MOVE flips the parent into
- * targeting mode (via the {@code onPickMoveTarget} prop); picking LAND posts
- * the order immediately (no targeting needed — LAND uses the ship's current
- * position).
+ * <p>Parent (Game.tsx) resolves which entity is selected and discriminates
+ * via the {@code selection} prop. This component does not fetch — every
+ * data source it needs is handed in.
  */
-type SelectedShipPanelProps = {
-    ship: ShipDto
-    /** Current world tick — surfaced in the info view so the panel doesn't
-     * feel "frozen" when the header is partially scrolled / not in view. */
-    currentTick: number | undefined
-    /** Called when the player picks "Move" from the action menu. Parent then
-     * enables targeting mode on the map. */
-    onPickMoveTarget: () => void
-}
+export type SelectedEntityPanelProps =
+    | { kind: 'ownShip'; ship: ShipDto; currentTick: number | undefined; onPickMoveTarget: () => void }
+    | { kind: 'foreignShip'; ship: PublicShipDto }
+    | { kind: 'planet'; planet: PlanetDto }
+    | { kind: 'none' }
 
 const ORDERS_POLL_MS = 5000
 
-export function SelectedShipPanel({ ship, currentTick, onPickMoveTarget }: SelectedShipPanelProps) {
+export function SelectedEntityPanel(props: SelectedEntityPanelProps) {
+    if (props.kind === 'none') {
+        return (
+            <section className="selected-ship-panel selected-ship-panel--empty">
+                <p className="selected-ship-panel__empty">
+                    Click a ship or planet on the map to see details.
+                </p>
+            </section>
+        )
+    }
+
+    if (props.kind === 'foreignShip') {
+        return (
+            <section className="selected-ship-panel">
+                <header className="selected-ship-panel__header">
+                    <h2>{props.ship.name}</h2>
+                    <span className="selected-ship-panel__badge">other player</span>
+                </header>
+                <dl className="ship-info">
+                    <dt>Position</dt>
+                    <dd>
+                        ({props.ship.x}, {props.ship.y})
+                    </dd>
+                </dl>
+            </section>
+        )
+    }
+
+    if (props.kind === 'planet') {
+        return (
+            <section className="selected-ship-panel">
+                <header className="selected-ship-panel__header">
+                    <h2>{props.planet.name}</h2>
+                    <span className="selected-ship-panel__badge">planet</span>
+                </header>
+                <dl className="ship-info">
+                    <dt>Position</dt>
+                    <dd>
+                        ({props.planet.x}, {props.planet.y})
+                    </dd>
+                    {props.planet.description && (
+                        <>
+                            <dt>About</dt>
+                            <dd>{props.planet.description}</dd>
+                        </>
+                    )}
+                </dl>
+            </section>
+        )
+    }
+
+    return <OwnShipPanel {...props} />
+}
+
+// --- own-ship view: Info + Orders tabs ---
+
+function OwnShipPanel({
+    ship,
+    currentTick,
+    onPickMoveTarget,
+}: {
+    ship: ShipDto
+    currentTick: number | undefined
+    onPickMoveTarget: () => void
+}) {
     const [view, setView] = useState<'info' | 'orders'>('info')
 
     return (
@@ -50,13 +125,15 @@ export function SelectedShipPanel({ ship, currentTick, onPickMoveTarget }: Selec
                 </nav>
             </header>
 
-            {view === 'info' && <InfoView ship={ship} currentTick={currentTick} />}
-            {view === 'orders' && <OrdersView ship={ship} onPickMoveTarget={onPickMoveTarget} />}
+            {view === 'info' && <OwnShipInfo ship={ship} currentTick={currentTick} />}
+            {view === 'orders' && (
+                <OwnShipOrders ship={ship} onPickMoveTarget={onPickMoveTarget} />
+            )}
         </section>
     )
 }
 
-function InfoView({ ship, currentTick }: { ship: ShipDto; currentTick: number | undefined }) {
+function OwnShipInfo({ ship, currentTick }: { ship: ShipDto; currentTick: number | undefined }) {
     return (
         <dl className="ship-info">
             <dt>Position</dt>
@@ -71,7 +148,13 @@ function InfoView({ ship, currentTick }: { ship: ShipDto; currentTick: number | 
     )
 }
 
-function OrdersView({ ship, onPickMoveTarget }: { ship: ShipDto; onPickMoveTarget: () => void }) {
+function OwnShipOrders({
+    ship,
+    onPickMoveTarget,
+}: {
+    ship: ShipDto
+    onPickMoveTarget: () => void
+}) {
     const queryClient = useQueryClient()
     const [addOpen, setAddOpen] = useState(false)
 
