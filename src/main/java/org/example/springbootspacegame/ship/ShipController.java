@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
+
+
 
 /**
  * Multi-ship endpoints. {@code /api/ships} returns the caller's fleet;
@@ -41,6 +45,12 @@ public class ShipController {
     @ResponseStatus(HttpStatus.CREATED)
     public ShipDto createShip(@Valid @RequestBody(required = false) CreateShipRequest request) {
         return shipService.createShipForCurrentUser(currentUserId(), request);
+    }
+
+    @PatchMapping("/{id}")
+    public ShipDto renameShip(@PathVariable UUID id,
+                              @Valid @RequestBody RenameShipRequest request) {
+        return shipService.renameShip(currentUserId(), id, request.name());
     }
 
     private static UUID currentUserId() {

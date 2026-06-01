@@ -20,6 +20,7 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -137,6 +138,73 @@ class ShipControllerIT {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value(username + "'s ship 2"));
+    }
+
+    // --- rename ---
+
+    @Test
+    void canRenameOwnShip() throws Exception {
+        MockHttpSession session = registerAndLogin("picard", "picard@enterprise.example", "engage-1701D");
+        String shipId = readFirstShipId(session);
+
+        mockMvc.perform(patch("/api/ships/" + shipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "Enterprise" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(shipId))
+                .andExpect(jsonPath("$.name").value("Enterprise"));
+    }
+
+    @Test
+    void renameToBlankNameReturnsBadRequest() throws Exception {
+        MockHttpSession session = registerAndLogin("riker", "riker@enterprise.example", "number-one1");
+        String shipId = readFirstShipId(session);
+
+        mockMvc.perform(patch("/api/ships/" + shipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "   " }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void renameToDuplicateNameReturnsConflict() throws Exception {
+        MockHttpSession session = registerAndLogin("troi", "troi@enterprise.example", "counselor1");
+
+        // Create a second ship with a known name, then try to rename the first to match.
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "Betazoid" }
+                                """))
+                .andExpect(status().isCreated());
+
+        String firstShipId = readFirstShipId(session);
+        mockMvc.perform(patch("/api/ships/" + firstShipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "Betazoid" }
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void renameOtherPlayersShipReturnsNotFound() throws Exception {
+        MockHttpSession data = registerAndLogin("data", "data@enterprise.example", "positronic1");
+        MockHttpSession laforge = registerAndLogin("laforge", "laforge@enterprise.example", "visor-on-12");
+
+        String dataShipId = readFirstShipId(data);
+
+        // LaForge tries to rename Data's ship — should 404.
+        mockMvc.perform(patch("/api/ships/" + dataShipId).session(laforge)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "Stolen" }
+                                """))
+                .andExpect(status().isNotFound());
     }
 
     // --- helpers ---

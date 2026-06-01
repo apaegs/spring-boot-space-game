@@ -100,6 +100,19 @@ public class ShipService {
      * deliberately indistinguishable from the outside so we don't leak the
      * existence of other users' ships.
      */
+    @Transactional
+    public ShipDto renameShip(UUID userId, UUID shipId, String name) {
+        Ship ship = shipRepository.findByIdAndUserId(shipId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
+        ship.rename(name);
+        try {
+            return ShipDto.from(shipRepository.saveAndFlush(ship));
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A ship named '" + name + "' already exists", e);
+        }
+    }
+
     @Transactional(readOnly = true)
     public Ship requireOwnedShip(UUID userId, UUID shipId) {
         return shipRepository.findByIdAndUserId(shipId, userId)

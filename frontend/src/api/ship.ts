@@ -8,3 +8,7 @@ export function listMyShips(signal?: AbortSignal): Promise<ShipDto[]> {
 export function createShip(body: CreateShipRequest = {}): Promise<ShipDto> {
     return api.post<ShipDto>('/api/ships', body)
 }
+
+export function renameShip(shipId: string, name: string): Promise<ShipDto> {
+    return api.patch<ShipDto>(`/api/ships/${shipId}`, { name })
+}

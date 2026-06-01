@@ -1,4 +1,16 @@
 /* ============================================================
+ * Fonts
+ * ============================================================ */
+
+@font-face {
+    font-family: 'Bitcell';
+    src: url('/fonts/bitcell_memesbruh03.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ============================================================
  * Auth pages (login / register) — unchanged from v1.
  * ============================================================ */
 
@@ -83,7 +95,7 @@
     width: 100vw;
     background: #0a0a1a;
     color: #e8e8f0;
-    font-family: system-ui, sans-serif;
+    font-family: 'Bitcell', system-ui, sans-serif;
 }
 
 .game--targeting .world-map canvas {
@@ -352,6 +364,55 @@
     gap: 0.25rem;
 }
 
+.ship-name-editor {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.ship-name-editor h2 {
+    font-size: 1rem;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ship-name-editor__edit-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #8888aa;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.1rem 0.25rem;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+.ship-name-editor__edit-btn:hover {
+    opacity: 1;
+    color: #c0c0dd;
+}
+
+.ship-name-editor__input {
+    background: #1a1a2e;
+    border: 1px solid #5a5a8a;
+    border-radius: 3px;
+    color: inherit;
+    font: inherit;
+    font-size: 1rem;
+    padding: 0.1rem 0.3rem;
+    width: 100%;
+    min-width: 0;
+}
+
+.ship-name-editor__input:focus {
+    border-color: #8888cc;
+    outline: none;
+}
+
 .selected-ship-panel--empty {
     display: flex;
     align-items: center;
@@ -394,6 +455,16 @@
 .tab--active {
     color: #fff;
     border-color: #66ddff;
+}
+
+/* Readability override: pixel font is too dense for multi-line body copy */
+.ship-info,
+.orders-view,
+.selected-ship-panel__empty,
+.form-error,
+.game__query-error,
+.game__targeting-banner {
+    font-family: system-ui, sans-serif;
 }
 
 .ship-info {

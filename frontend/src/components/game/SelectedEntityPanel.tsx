@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { cancelOrder, createOrder, listOrders } from '../../api/orders'
+import { renameShip } from '../../api/ship'
 import type {
     OrderKind,
     PlanetDto,
@@ -106,7 +107,7 @@ function OwnShipPanel({
     return (
         <section className="selected-ship-panel">
             <header className="selected-ship-panel__header">
-                <h2>{ship.name}</h2>
+                <ShipNameEditor ship={ship} />
                 <nav className="selected-ship-panel__tabs">
                     <button
                         type="button"
@@ -130,6 +131,79 @@ function OwnShipPanel({
                 <OwnShipOrders ship={ship} onPickMoveTarget={onPickMoveTarget} />
             )}
         </section>
+    )
+}
+
+function ShipNameEditor({ ship }: { ship: ShipDto }) {
+    const queryClient = useQueryClient()
+    const [editing, setEditing] = useState(false)
+    const [draft, setDraft] = useState('')
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    const rename = useMutation({
+        mutationFn: (name: string) => renameShip(ship.id, name),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['ships'] })
+            setEditing(false)
+        },
+    })
+
+    const startEditing = () => {
+        setDraft(ship.name)
+        setEditing(true)
+        // Focus after React renders the input.
+        setTimeout(() => inputRef.current?.select(), 0)
+    }
+
+    const commit = () => {
+        const trimmed = draft.trim()
+        if (trimmed && trimmed !== ship.name) {
+            rename.mutate(trimmed)
+        } else {
+            setEditing(false)
+        }
+    }
+
+    if (editing) {
+        return (
+            <div className="ship-name-editor">
+                <input
+                    ref={inputRef}
+                    className="ship-name-editor__input"
+                    value={draft}
+                    maxLength={64}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') commit()
+                        if (e.key === 'Escape') setEditing(false)
+                    }}
+                    onBlur={commit}
+                    aria-label="Ship name"
+                />
+                {rename.error && (
+                    <p className="form-error" role="alert">
+                        {rename.error instanceof ApiError
+                            ? rename.error.message
+                            : 'Could not rename'}
+                    </p>
+                )}
+            </div>
+        )
+    }
+
+    return (
+        <div className="ship-name-editor">
+            <h2>{ship.name}</h2>
+            <button
+                type="button"
+                className="ship-name-editor__edit-btn"
+                onClick={startEditing}
+                title="Rename ship"
+                aria-label="Rename ship"
+            >
+                ✎
+            </button>
+        </div>
     )
 }
 
