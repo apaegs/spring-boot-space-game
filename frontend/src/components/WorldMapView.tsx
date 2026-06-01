@@ -1,15 +1,29 @@
 import { useEffect, useRef } from 'react'
-import { WorldMap } from '../pixi/WorldMap'
-import type { PlanetDto, ShipDto } from '../types/api'
+import { WorldMap, type MapSelection, type ShipOnMap } from '../pixi/WorldMap'
+import type { PlanetDto } from '../types/api'
 
 type WorldMapViewProps = {
     planets: PlanetDto[]
-    ships: ShipDto[]
-    selectedShipId: string | null
+    /**
+     * Every ship to render — caller's own + every other player's, already
+     * deduped and tagged with {@code isOwn} by the parent. WorldMap doesn't
+     * fetch; it just draws what it's handed.
+     */
+    ships: ShipOnMap[]
+    /** What the player has selected. Drives camera focus and ship-marker highlight. */
+    selection: MapSelection
+    /**
+     * Whether the map is in targeting mode (Move/Land action awaiting a tile
+     * pick). Affects pointer-event capture inside the map: in targeting mode,
+     * ship and planet markers don't swallow clicks — the tile underneath them
+     * fires {@code onTileClick} instead.
+     */
+    isTargeting: boolean
     /** Click on any tile (background or otherwise). Used for targeting-mode. */
     onTileClick?: (x: number, y: number) => void
-    /** Click on a planet specifically — stops propagation so the tile click
-     * doesn't also fire. */
+    /** Click on a ship marker. Used by the parent to select that ship. */
+    onShipClick?: (ship: ShipOnMap) => void
+    /** Click on a planet marker. Used by the parent to select that planet. */
     onPlanetClick?: (planet: PlanetDto) => void
 }
 
@@ -26,8 +40,10 @@ type WorldMapViewProps = {
 export function WorldMapView({
     planets,
     ships,
-    selectedShipId,
+    selection,
+    isTargeting,
     onTileClick,
+    onShipClick,
     onPlanetClick,
 }: WorldMapViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null)
@@ -38,8 +54,10 @@ export function WorldMapView({
     // and any subsequent renders.
     const planetsRef = useRef(planets)
     const shipsRef = useRef(ships)
-    const selectedShipIdRef = useRef(selectedShipId)
+    const selectionRef = useRef(selection)
+    const isTargetingRef = useRef(isTargeting)
     const onTileClickRef = useRef(onTileClick)
+    const onShipClickRef = useRef(onShipClick)
     const onPlanetClickRef = useRef(onPlanetClick)
     useEffect(() => {
         planetsRef.current = planets
@@ -48,11 +66,17 @@ export function WorldMapView({
         shipsRef.current = ships
     }, [ships])
     useEffect(() => {
-        selectedShipIdRef.current = selectedShipId
-    }, [selectedShipId])
+        selectionRef.current = selection
+    }, [selection])
+    useEffect(() => {
+        isTargetingRef.current = isTargeting
+    }, [isTargeting])
     useEffect(() => {
         onTileClickRef.current = onTileClick
     }, [onTileClick])
+    useEffect(() => {
+        onShipClickRef.current = onShipClick
+    }, [onShipClick])
     useEffect(() => {
         onPlanetClickRef.current = onPlanetClick
     }, [onPlanetClick])
@@ -72,9 +96,12 @@ export function WorldMapView({
             // alive. Otherwise the prop-watching effects below would have
             // already fired against a null mapRef and the initial payload
             // would be missing.
+            map.setTargetingMode(isTargetingRef.current)
             map.setPlanets(planetsRef.current)
-            map.setShips(shipsRef.current, selectedShipIdRef.current)
+            map.setShips(shipsRef.current)
+            map.setSelection(selectionRef.current)
             map.setOnTileClick((x, y) => onTileClickRef.current?.(x, y))
+            map.setOnShipClick((ship) => onShipClickRef.current?.(ship))
             map.setOnPlanetClick((planet) => onPlanetClickRef.current?.(planet))
             mapRef.current = map
         })
@@ -93,8 +120,16 @@ export function WorldMapView({
     }, [planets])
 
     useEffect(() => {
-        mapRef.current?.setShips(ships, selectedShipId)
-    }, [ships, selectedShipId])
+        mapRef.current?.setShips(ships)
+    }, [ships])
+
+    useEffect(() => {
+        mapRef.current?.setSelection(selection)
+    }, [selection])
+
+    useEffect(() => {
+        mapRef.current?.setTargetingMode(isTargeting)
+    }, [isTargeting])
 
     return <div ref={containerRef} className="world-map" />
 }

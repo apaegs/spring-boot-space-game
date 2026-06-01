@@ -77,6 +77,23 @@ public class ShipService {
     }
 
     /**
+     * Public projection of every ship in the world — used by the map to render
+     * other players' ships alongside the caller's own. Returns the narrow
+     * {@link PublicShipDto} (no {@code userId}, no {@code createdAt}); foreign
+     * ships are visible but anonymous per the design in issue #35.
+     *
+     * <p>The caller's own ships are included in the result. The frontend dedupes
+     * against the private fleet list it already holds, so the only extra cost
+     * over a "foreign-only" variant is a handful of bytes per ship.
+     */
+    @Transactional(readOnly = true)
+    public List<PublicShipDto> listAllPublic() {
+        return shipRepository.findAllByOrderByCreatedAtAsc().stream()
+                .map(PublicShipDto::from)
+                .toList();
+    }
+
+    /**
      * Ownership-checked lookup used by ship-scoped endpoints (orders etc.).
      * Throws 404 if the ship doesn't exist or belongs to someone else —
      * deliberately indistinguishable from the outside so we don't leak the

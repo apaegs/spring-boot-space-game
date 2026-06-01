@@ -1,5 +1,30 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text, TextStyle } from 'pixi.js'
-import type { PlanetDto, ShipDto } from '../types/api'
+import type { PlanetDto } from '../types/api'
+
+/**
+ * Map-level view model for any ship — own or foreign. The React layer projects
+ * its {@code ShipDto} / {@code PublicShipDto} sources into this uniform shape
+ * before handing them down. {@code isOwn} drives the marker color and (in the
+ * future) any owner-only affordances; nothing about the click handling cares
+ * about ownership.
+ */
+export type ShipOnMap = {
+    id: string
+    name: string
+    x: number
+    y: number
+    isOwn: boolean
+}
+
+/**
+ * Map-level selection. Mirrors {@code Selection} in the React layer but kept
+ * separate so WorldMap stays React-free (no shared types with components).
+ * Drives camera focus and marker highlight.
+ */
+export type MapSelection =
+    | { kind: 'ship'; id: string }
+    | { kind: 'planet'; id: string }
+    | null
 
 /**
  * PixiJS world map. Lives in {@code src/pixi/} per CLAUDE.md — React doesn't
@@ -13,27 +38,43 @@ import type { PlanetDto, ShipDto } from '../types/api'
  * is a snap in v1; smooth interpolation lands as a follow-up — keeping the
  * implementation small while the rest of the UI churns.
  *
- * <h3>Tile clicks</h3>
- * The whole canvas is one big invisible hit area on the background layer. On
- * click, the screen coordinates are inverted through the camera transform to
- * a tile coordinate, and {@code onTileClick(x, y)} fires. Out-of-bounds clicks
- * are dropped silently.
+ * <h3>Click semantics</h3>
+ * Two modes:
+ * <ul>
+ *   <li><b>Normal</b>: ship-and-planet markers capture clicks ({@code
+ *       onShipClick} / {@code onPlanetClick} fire, the tile underneath does
+ *       <i>not</i> fire). Empty-tile clicks call {@code onTileClick}. UI uses
+ *       this for "select that thing".</li>
+ *   <li><b>Targeting</b> (set via {@link setTargetingMode}): ships and planets
+ *       become transparent to pointer events ({@code eventMode = 'none'}), so
+ *       a click anywhere — including on top of a planet's disc or another
+ *       ship's triangle — falls through to the background and fires
+ *       {@code onTileClick} for the tile under the cursor. Lets the player
+ *       MOVE-target a planet's tile without the planet "swallowing" the click.</li>
+ * </ul>
  */
 export class WorldMap {
     private static readonly CANVAS_PX = 600
     private static readonly GRID_CELLS = 100
     private static readonly TILE_PX = 6 // base size at zoom 1.0; world = 600px
 
+    /**
+     * Hard cap for any visible marker's half-extent so nothing renders larger
+     * than a grid tile. {@code TILE_PX/2 - 0.5} leaves a half-pixel margin on
+     * each side, keeping markers visually inside their cell at all zoom levels.
+     */
+    private static readonly MARKER_MAX_HALF = WorldMap.TILE_PX / 2 - 0.5
+
     private static readonly ZOOM_OUT = 1.0
     private static readonly ZOOM_IN = 4.0
 
     private static readonly COLORS = {
         background: 0x0a0a1a,
-        gridLineMajor: 0x252540,
-        gridLineMinor: 0x12122a,
+        gridLine: 0x2a2a4a,
         planet: 0xffaa00,
         planetLabel: 0xffffff,
-        ship: 0x66ddff,
+        shipOwn: 0x66ddff,
+        shipForeign: 0xc266aa,
         shipSelected: 0xfff066,
         shipOutline: 0xffffff,
         hover: 0x66ddff,
@@ -55,11 +96,13 @@ export class WorldMap {
     // Cached so we can re-render when selection / zoom changes without the
     // caller having to keep passing the same arrays.
     private planets: PlanetDto[] = []
-    private ships: ShipDto[] = []
-    private selectedShipId: string | null = null
+    private ships: ShipOnMap[] = []
+    private selection: MapSelection = null
     private hoverTile: { x: number; y: number } | null = null
+    private targeting = false
 
     private onTileClick: ((x: number, y: number) => void) | null = null
+    private onShipClick: ((ship: ShipOnMap) => void) | null = null
     private onPlanetClick: ((planet: PlanetDto) => void) | null = null
 
     async init(parent: HTMLDivElement): Promise<void> {
@@ -120,17 +163,48 @@ export class WorldMap {
     setPlanets(planets: PlanetDto[]): void {
         this.planets = planets
         this.renderPlanets()
+        // A planet's position may be what the camera is locked to — recompute
+        // in case the planet entries arrived after the selection was set.
+        if (this.selection?.kind === 'planet') {
+            this.updateCameraForSelection()
+        }
     }
 
-    setShips(ships: ShipDto[], selectedShipId: string | null): void {
+    setShips(ships: ShipOnMap[]): void {
         this.ships = ships
-        this.selectedShipId = selectedShipId
+        // Ship coordinates change each tick; if the camera follows a ship, it
+        // needs to track the latest position.
+        if (this.selection?.kind === 'ship') {
+            this.updateCameraForSelection()
+        }
+        this.renderShips()
+    }
+
+    setSelection(selection: MapSelection): void {
+        this.selection = selection
         this.updateCameraForSelection()
         this.renderShips()
     }
 
+    /**
+     * Toggle pointer-event transparency on ships + planets. In targeting mode,
+     * clicks pass through markers to the background's tile-click handler — the
+     * player can MOVE-target a planet's tile without the planet swallowing the
+     * click. Normal mode restores marker-level handlers.
+     */
+    setTargetingMode(active: boolean): void {
+        if (this.targeting === active) return
+        this.targeting = active
+        this.renderShips()
+        this.renderPlanets()
+    }
+
     setOnTileClick(callback: ((x: number, y: number) => void) | null): void {
         this.onTileClick = callback
+    }
+
+    setOnShipClick(callback: ((ship: ShipOnMap) => void) | null): void {
+        this.onShipClick = callback
     }
 
     setOnPlanetClick(callback: ((planet: PlanetDto) => void) | null): void {
@@ -140,17 +214,30 @@ export class WorldMap {
     // ---------- camera ----------
 
     private updateCameraForSelection(): void {
-        if (this.selectedShipId === null) {
+        const focus = this.resolveSelectionPosition()
+        if (focus === null) {
             this.camera = { x: 50, y: 50, zoom: WorldMap.ZOOM_OUT }
         } else {
-            const ship = this.ships.find((s) => s.id === this.selectedShipId)
-            if (ship) {
-                this.camera = { x: ship.x, y: ship.y, zoom: WorldMap.ZOOM_IN }
-            }
+            this.camera = { x: focus.x, y: focus.y, zoom: WorldMap.ZOOM_IN }
         }
         this.applyCamera()
         // Grid density depends on zoom; redraw so per-tile lines appear/vanish.
         this.drawGrid()
+    }
+
+    /**
+     * Resolve the current selection to a grid position, or null if nothing is
+     * selected / the entity can't be found in the current data set. Lets the
+     * camera fall back cleanly when a refetch removes a row mid-selection.
+     */
+    private resolveSelectionPosition(): { x: number; y: number } | null {
+        if (!this.selection) return null
+        if (this.selection.kind === 'ship') {
+            const ship = this.ships.find((s) => s.id === this.selection!.id)
+            return ship ? { x: ship.x, y: ship.y } : null
+        }
+        const planet = this.planets.find((p) => p.id === this.selection!.id)
+        return planet ? { x: planet.x, y: planet.y } : null
     }
 
     private applyCamera(): void {
@@ -172,26 +259,32 @@ export class WorldMap {
         this.gridLayer.clear()
         const total = WorldMap.CANVAS_PX
 
-        // Per-tile grid: only meaningful when zoomed in enough that single
-        // tiles are large enough to read. Drawn first so the major lines layer
-        // on top.
+        // One uniform thickness across the whole grid. The every-10 lines are
+        // brighter (alpha 1.0) than the per-tile lines (alpha 0.35) so they
+        // still read as a scale hint, but they don't read as different lines.
+        // Per-tile lines only draw when zoomed in enough to actually see them;
+        // at world zoom they collapse to a fog and just add visual noise.
+        const lineWidth = 1
         if (this.camera.zoom >= 2.0) {
             for (let i = 0; i <= WorldMap.GRID_CELLS; i++) {
+                if (i % 10 === 0) continue // major drawn separately below
                 const offset = i * WorldMap.TILE_PX
                 this.gridLayer.moveTo(offset, 0).lineTo(offset, total)
                 this.gridLayer.moveTo(0, offset).lineTo(total, offset)
             }
-            this.gridLayer.stroke({ color: WorldMap.COLORS.gridLineMinor, width: 0.5 })
+            this.gridLayer.stroke({
+                color: WorldMap.COLORS.gridLine,
+                alpha: 0.35,
+                width: lineWidth,
+            })
         }
 
-        // Major grid every 10 tiles, always visible — gives the player a
-        // sense of scale even at world zoom.
         for (let i = 0; i <= WorldMap.GRID_CELLS; i += 10) {
             const offset = i * WorldMap.TILE_PX
             this.gridLayer.moveTo(offset, 0).lineTo(offset, total)
             this.gridLayer.moveTo(0, offset).lineTo(total, offset)
         }
-        this.gridLayer.stroke({ color: WorldMap.COLORS.gridLineMajor, width: 1 })
+        this.gridLayer.stroke({ color: WorldMap.COLORS.gridLine, alpha: 1, width: lineWidth })
     }
 
     private renderPlanets(): void {
@@ -202,18 +295,27 @@ export class WorldMap {
             const { px, py } = WorldMap.tileToPx(planet.x, planet.y)
 
             const dot = new Graphics()
-            // Larger transparent hit area on top of the visible disc — keeps
-            // clicks easy at low zoom levels.
+            // Visible disc capped at {@link MARKER_MAX_HALF} so it can't draw
+            // past its tile. The transparent hit area stays large for click
+            // accessibility at world zoom — only the visible bound is capped.
             dot.circle(px, py, 10)
             dot.fill({ color: WorldMap.COLORS.planet, alpha: 0 })
-            dot.circle(px, py, 4)
+            dot.circle(px, py, WorldMap.MARKER_MAX_HALF)
             dot.fill(WorldMap.COLORS.planet)
-            dot.eventMode = 'static'
-            dot.cursor = 'pointer'
-            dot.on('pointerdown', (e: FederatedPointerEvent) => {
-                e.stopPropagation() // don't fall through to the tile click
-                this.onPlanetClick?.(planet)
-            })
+            if (this.targeting) {
+                // In targeting mode the planet must NOT swallow the click —
+                // a MOVE-targeting click on a planet's tile is queued like any
+                // other tile click. Setting eventMode 'none' lets the click
+                // fall through to the background's hit area.
+                dot.eventMode = 'none'
+            } else {
+                dot.eventMode = 'static'
+                dot.cursor = 'pointer'
+                dot.on('pointerdown', (e: FederatedPointerEvent) => {
+                    e.stopPropagation() // don't fall through to the tile click
+                    this.onPlanetClick?.(planet)
+                })
+            }
             this.planetsLayer.addChild(dot)
 
             const label = new Text({
@@ -234,17 +336,35 @@ export class WorldMap {
         if (!this.shipsLayer) return
         this.shipsLayer.removeChildren()
 
+        const selectedShipId = this.selection?.kind === 'ship' ? this.selection.id : null
         for (const ship of this.ships) {
-            const isSelected = ship.id === this.selectedShipId
+            const isSelected = ship.id === selectedShipId
             const { px, py } = WorldMap.tileToPx(ship.x, ship.y)
 
             const marker = new Graphics()
-            // Triangle pointing up. Selected ship gets a slightly larger / brighter
-            // marker so it's distinguishable in a crowded tile.
-            const size = isSelected ? 4 : 3
+            // Triangle pointing up. Size is capped at {@link MARKER_MAX_HALF}
+            // so the marker can't draw past its tile (no more "ships span two
+            // grid cells"). Selection is signalled by color (yellow) plus the
+            // outline, not by inflating the marker — keeps the grid honest.
+            const size = WorldMap.MARKER_MAX_HALF
             marker.poly([px, py - size, px + size, py + size, px - size, py + size])
-            marker.fill(isSelected ? WorldMap.COLORS.shipSelected : WorldMap.COLORS.ship)
+            const fillColor = isSelected
+                ? WorldMap.COLORS.shipSelected
+                : ship.isOwn
+                  ? WorldMap.COLORS.shipOwn
+                  : WorldMap.COLORS.shipForeign
+            marker.fill(fillColor)
             marker.stroke({ color: WorldMap.COLORS.shipOutline, width: 1 })
+            if (this.targeting) {
+                marker.eventMode = 'none'
+            } else {
+                marker.eventMode = 'static'
+                marker.cursor = 'pointer'
+                marker.on('pointerdown', (e: FederatedPointerEvent) => {
+                    e.stopPropagation()
+                    this.onShipClick?.(ship)
+                })
+            }
             this.shipsLayer.addChild(marker)
         }
     }

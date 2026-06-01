@@ -352,6 +352,34 @@
     gap: 0.25rem;
 }
 
+.selected-ship-panel--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6a6a85;
+    text-align: center;
+}
+
+.selected-ship-panel__empty {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+/* Small chip next to the entity name — "other player" for foreign ships,
+   "planet" for planet selections. Keeps the panel visually obvious about
+   what kind of thing you're looking at. */
+.selected-ship-panel__badge {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8888aa;
+    background: #1a1a2e;
+    border: 1px solid #2a2a45;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+}
+
 .tab {
     font: inherit;
     font-size: 0.85rem;

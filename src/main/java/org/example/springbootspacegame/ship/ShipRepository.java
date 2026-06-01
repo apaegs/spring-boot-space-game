@@ -12,6 +12,13 @@ public interface ShipRepository extends JpaRepository<Ship, UUID> {
     List<Ship> findByUserIdOrderByCreatedAtAsc(UUID userId);
 
     /**
+     * Every ship across all users, oldest first. Used by {@code GET /api/world/ships}
+     * to render foreign ships on the map. Deterministic ordering keeps integration
+     * tests stable.
+     */
+    List<Ship> findAllByOrderByCreatedAtAsc();
+
+    /**
      * Count ships per user. Used by {@link ShipService#createForUser} to generate
      * the default ship name with a sequential suffix.
      */

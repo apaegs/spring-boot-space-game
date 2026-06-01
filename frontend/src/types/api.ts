@@ -47,6 +47,19 @@ export type CreateShipRequest = {
     name?: string
 }
 
+/**
+ * Public projection of any ship in the world (own or foreign). Matches the
+ * backend's {@code PublicShipDto} — deliberately narrower than {@link ShipDto}:
+ * no {@code createdAt}, no owner info. Used to render foreign ships on the
+ * map without leaking who owns them.
+ */
+export type PublicShipDto = {
+    id: string
+    name: string
+    x: number
+    y: number
+}
+
 // --- world ---
 
 export type WorldDto = {
