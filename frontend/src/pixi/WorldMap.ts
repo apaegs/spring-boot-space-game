@@ -78,6 +78,8 @@ export class WorldMap {
         shipSelected: 0xfff066,
         shipOutline: 0xffffff,
         hover: 0x66ddff,
+        selectionRingShip: 0x66ddff,
+        selectionRingPlanet: 0xffdd88,
     }
 
     private app: Application | null = null
@@ -90,6 +92,7 @@ export class WorldMap {
     private worldLayer: Container | null = null
     private gridLayer: Graphics | null = null
     private hoverLayer: Graphics | null = null
+    private selectionLayer: Graphics | null = null
     private planetsLayer: Container | null = null
     private shipsLayer: Container | null = null
 
@@ -134,13 +137,17 @@ export class WorldMap {
 
         // Grid first (bottom), hover next so it sits over the grid but under
         // planets and ships — keeps the highlight from covering a planet's
-        // label or a ship's marker when the cursor lands on it.
+        // label or a ship's marker when the cursor lands on it. Selection ring
+        // sits between hover and the entity layers so it's clearly visible
+        // behind the marker but above the hover tile fill.
         this.gridLayer = new Graphics()
         this.hoverLayer = new Graphics()
+        this.selectionLayer = new Graphics()
         this.planetsLayer = new Container()
         this.shipsLayer = new Container()
         this.worldLayer.addChild(this.gridLayer)
         this.worldLayer.addChild(this.hoverLayer)
+        this.worldLayer.addChild(this.selectionLayer)
         this.worldLayer.addChild(this.planetsLayer)
         this.worldLayer.addChild(this.shipsLayer)
 
@@ -155,6 +162,7 @@ export class WorldMap {
             this.worldLayer = null
             this.gridLayer = null
             this.hoverLayer = null
+            this.selectionLayer = null
             this.planetsLayer = null
             this.shipsLayer = null
         }
@@ -167,6 +175,7 @@ export class WorldMap {
         // in case the planet entries arrived after the selection was set.
         if (this.selection?.kind === 'planet') {
             this.updateCameraForSelection()
+            this.renderSelectionRing()
         }
     }
 
@@ -176,6 +185,7 @@ export class WorldMap {
         // needs to track the latest position.
         if (this.selection?.kind === 'ship') {
             this.updateCameraForSelection()
+            this.renderSelectionRing()
         }
         this.renderShips()
     }
@@ -184,6 +194,8 @@ export class WorldMap {
         this.selection = selection
         this.updateCameraForSelection()
         this.renderShips()
+        this.renderPlanets()
+        this.renderSelectionRing()
     }
 
     /**
@@ -408,6 +420,41 @@ export class WorldMap {
         this.hoverLayer.rect(x, y, WorldMap.TILE_PX, WorldMap.TILE_PX)
         this.hoverLayer.fill({ color: WorldMap.COLORS.hover, alpha: 0.18 })
         this.hoverLayer.stroke({ color: WorldMap.COLORS.hover, alpha: 0.6, width: 0.5 })
+    }
+
+    /**
+     * Draw a static outline ring around the currently selected entity.
+     * Ship selections get a cyan ring ({@code selectionRingShip}); planet
+     * selections get an amber ring ({@code selectionRingPlanet}). The ring
+     * radius is slightly larger than the marker so it's visible without
+     * overlapping the entity geometry. Clears when nothing is selected.
+     */
+    private renderSelectionRing(): void {
+        if (!this.selectionLayer) return
+        this.selectionLayer.clear()
+        if (!this.selection) return
+
+        const pos = this.resolveSelectionPosition()
+        if (!pos) return
+
+        const { px, py } = WorldMap.tileToPx(pos.x, pos.y)
+        const ringRadius = WorldMap.MARKER_MAX_HALF + 1.5
+
+        if (this.selection.kind === 'ship') {
+            this.selectionLayer.circle(px, py, ringRadius)
+            this.selectionLayer.stroke({
+                color: WorldMap.COLORS.selectionRingShip,
+                alpha: 0.85,
+                width: 1,
+            })
+        } else {
+            this.selectionLayer.circle(px, py, ringRadius)
+            this.selectionLayer.stroke({
+                color: WorldMap.COLORS.selectionRingPlanet,
+                alpha: 0.85,
+                width: 1,
+            })
+        }
     }
 
     /**

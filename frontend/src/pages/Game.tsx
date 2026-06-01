@@ -107,16 +107,20 @@ export function Game() {
     })
 
     const onTileClick = (x: number, y: number) => {
-        if (actionMode.type !== 'targetingMove') return
-        if (actionMode.shipId !== selectedShipId) {
-            // Player switched ships after entering targeting mode. Cancel the
-            // stale targeting state silently — they need to re-pick Move for
-            // the new selection if they still want to.
+        if (actionMode.type === 'targetingMove') {
+            if (actionMode.shipId !== selectedShipId) {
+                // Player switched ships after entering targeting mode. Cancel
+                // the stale targeting state silently — they need to re-pick
+                // Move for the new selection if they still want to.
+                setActionMode({ type: 'idle' })
+                return
+            }
+            move.mutate({ shipId: actionMode.shipId, x, y })
             setActionMode({ type: 'idle' })
             return
         }
-        move.mutate({ shipId: actionMode.shipId, x, y })
-        setActionMode({ type: 'idle' })
+        // Normal mode: clicking an empty tile deselects the current entity.
+        setSelection(null)
     }
 
     // Ship and planet clicks only select in normal mode. WorldMap stops
@@ -125,12 +129,23 @@ export function Game() {
     // defensive check costs nothing and keeps intent explicit.
     const onShipClick = (ship: ShipOnMap) => {
         if (isTargetingActive) return
-        setSelection({ kind: 'ship', id: ship.id })
+        // Clicking the already-selected ship deselects it; clicking a
+        // different ship selects it.
+        if (selection?.kind === 'ship' && selection.id === ship.id) {
+            setSelection(null)
+        } else {
+            setSelection({ kind: 'ship', id: ship.id })
+        }
     }
 
     const onPlanetClick = (planetId: string) => {
         if (isTargetingActive) return
-        setSelection({ kind: 'planet', id: planetId })
+        // Clicking the already-selected planet deselects it.
+        if (selection?.kind === 'planet' && selection.id === planetId) {
+            setSelection(null)
+        } else {
+            setSelection({ kind: 'planet', id: planetId })
+        }
     }
 
     const startMoveTargeting = () => {
