@@ -102,13 +102,14 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 
 - **Anything sensitive goes in `.env`** (gitignored). Template: `.env.example` (committed, no real values).
 - Spring reads `.env` automatically via `spring.config.import=optional:file:.env[.properties]`. Format: properties style (`key=value`, no `export` prefix).
-- `compose.yaml` reads `POSTGRES_*` with fallback to defaults — local devs can skip `.env` entirely.
+- `compose.yaml` has **no default credentials** — `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are all required from `.env`. This is deliberate: a committed default is a committed secret, even if it's "just a dev value". Every dev picks their own password locally.
+- The dev Postgres binds to `127.0.0.1:5432`, not `0.0.0.0`. Don't change this without a reason — it keeps the container off the LAN regardless of password strength.
 - Add a new secret like this:
   1. Add the line to `.env.example` with an empty or placeholder value.
   2. Add the real value in your local `.env`.
   3. Share the value with the friend out-of-band (Signal / password manager / verbally).
 - CI/prod secrets belong in GitHub Actions Secrets or the hosting provider's equivalent — **not** in a committed `.env` anywhere.
-- If a secret ends up in git: rotate it immediately. Removing it in a new commit is not enough — it's still in history.
+- If a secret ends up in git: rotate it immediately. Removing it in a new commit is not enough — it's still in history. For `POSTGRES_PASSWORD` specifically: `docker compose down -v` to drop the local volume, then pick a new password in `.env`. Postgres can't re-key an existing user from environment variables after first init.
 
 ## What NOT to do
 
