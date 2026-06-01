@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -61,6 +62,43 @@ class WorldControllerIT {
     void worldEndpointRequiresAuth() throws Exception {
         mockMvc.perform(get("/api/world"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void worldShipsEndpointRequiresAuth() throws Exception {
+        mockMvc.perform(get("/api/world/ships"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void worldShipsReturnsEveryUsersShip() throws Exception {
+        // Register two players. Each auto-creates one mothership.
+        registerAndLogin("kirk", "kirk@enterprise.example", "to-boldly-go1");
+        MockHttpSession spock = registerAndLogin("spock", "spock@enterprise.example", "live-long-prosper");
+
+        // From spock's session, the public ship list contains both ships.
+        // We don't care about ordering; assert by name set.
+        mockMvc.perform(get("/api/world/ships").session(spock))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[*].name", containsInAnyOrder("kirk's ship", "spock's ship")));
+    }
+
+    @Test
+    void worldShipsDoesNotLeakPrivateFields() throws Exception {
+        MockHttpSession session = registerAndLogin("uhura", "uhura@enterprise.example", "frequency-open-1");
+
+        // Public projection must not expose ownership or audit timestamps.
+        // If anyone widens PublicShipDto with a private field by accident,
+        // this test fails loudly.
+        mockMvc.perform(get("/api/world/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").isNotEmpty())
+                .andExpect(jsonPath("$[0].name").isNotEmpty())
+                .andExpect(jsonPath("$[0].x").isNumber())
+                .andExpect(jsonPath("$[0].y").isNumber())
+                .andExpect(jsonPath("$[0].userId").doesNotExist())
+                .andExpect(jsonPath("$[0].createdAt").doesNotExist());
     }
 
     private MockHttpSession registerAndLogin(String username, String email, String password) throws Exception {
