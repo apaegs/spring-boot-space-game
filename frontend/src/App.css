@@ -15,7 +15,6 @@
  * ============================================================ */
 
 .auth-page {
-    font-family: system-ui, sans-serif;
     max-width: 480px;
     margin: 4rem auto;
     padding: 2rem;
@@ -95,7 +94,6 @@
     width: 100vw;
     background: #0a0a1a;
     color: #e8e8f0;
-    font-family: 'Bitcell', system-ui, sans-serif;
 }
 
 .game--targeting .world-map canvas {
@@ -464,9 +462,6 @@
 .form-error,
 .game__query-error,
 .game__targeting-banner {
-    font-family: system-ui, sans-serif;
-}
-
 .ship-info {
     display: grid;
     grid-template-columns: max-content auto;
