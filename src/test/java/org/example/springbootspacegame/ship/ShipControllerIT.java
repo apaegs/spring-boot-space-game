@@ -3,8 +3,6 @@ package org.example.springbootspacegame.ship;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springbootspacegame.IntegrationTest;
-import org.example.springbootspacegame.auth.LoginRequest;
-import org.example.springbootspacegame.auth.RegisterRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.example.springbootspacegame.MockMvcHelper.registerAndLogin;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -46,7 +45,7 @@ class ShipControllerIT {
     @Test
     void newlyRegisteredUserHasOneShipAtSpawn() throws Exception {
         String username = "spock";
-        MockHttpSession session = registerAndLogin(username, "spock@enterprise.example", "live-long-prosper");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, username, "spock@enterprise.example", "live-long-prosper");
 
         mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
@@ -60,8 +59,8 @@ class ShipControllerIT {
 
     @Test
     void twoUsersGetTwoDifferentShips() throws Exception {
-        MockHttpSession alice = registerAndLogin("alice", "alice@example.com", "password-alice-1");
-        MockHttpSession bob = registerAndLogin("bob", "bob@example.com", "password-bob-12");
+        MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice", "alice@example.com", "password-alice-1");
+        MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob", "bob@example.com", "password-bob-12");
 
         String aliceShipId = readFirstShipId(alice);
         String bobShipId = readFirstShipId(bob);
@@ -76,7 +75,7 @@ class ShipControllerIT {
 
     @Test
     void shipPositionIsWithinGrid() throws Exception {
-        MockHttpSession session = registerAndLogin("uhura", "uhura@enterprise.example", "frequency-open-1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "uhura", "uhura@enterprise.example", "frequency-open-1");
 
         mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
@@ -89,7 +88,7 @@ class ShipControllerIT {
     @Test
     void canCreateAdditionalShipsAndTheyGetNumberedNames() throws Exception {
         String username = "kira";
-        MockHttpSession session = registerAndLogin(username, "kira@enterprise.example", "deep-space-niner");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, username, "kira@enterprise.example", "deep-space-niner");
 
         // The auto-created mothership keeps the bare name; subsequent ships get
         // numbered suffixes. Tests both: the default-named first ship was created
@@ -113,7 +112,7 @@ class ShipControllerIT {
 
     @Test
     void canCreateShipWithCustomName() throws Exception {
-        MockHttpSession session = registerAndLogin("worf", "worf@enterprise.example", "klingon-honor1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "worf", "worf@enterprise.example", "klingon-honor1");
 
         mockMvc.perform(post("/api/ships").session(session)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -127,7 +126,7 @@ class ShipControllerIT {
     @Test
     void createShipWithWhitespaceNameFallsBackToAutoName() throws Exception {
         String username = "tuvok";
-        MockHttpSession session = registerAndLogin(username, "tuvok@enterprise.example", "logical-choice");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, username, "tuvok@enterprise.example", "logical-choice");
 
         // Whitespace-only name in the request body trims to empty, which we
         // treat as "no name supplied" → auto-generated.
@@ -144,7 +143,7 @@ class ShipControllerIT {
 
     @Test
     void canRenameOwnShip() throws Exception {
-        MockHttpSession session = registerAndLogin("picard", "picard@enterprise.example", "engage-1701D");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "picard", "picard@enterprise.example", "engage-1701D");
         String shipId = readFirstShipId(session);
 
         mockMvc.perform(patch("/api/ships/" + shipId).session(session)
@@ -159,7 +158,7 @@ class ShipControllerIT {
 
     @Test
     void renameToBlankNameReturnsBadRequest() throws Exception {
-        MockHttpSession session = registerAndLogin("riker", "riker@enterprise.example", "number-one1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "riker", "riker@enterprise.example", "number-one1");
         String shipId = readFirstShipId(session);
 
         mockMvc.perform(patch("/api/ships/" + shipId).session(session)
@@ -172,7 +171,7 @@ class ShipControllerIT {
 
     @Test
     void renameToDuplicateNameReturnsConflict() throws Exception {
-        MockHttpSession session = registerAndLogin("troi", "troi@enterprise.example", "counselor1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "troi", "troi@enterprise.example", "counselor1");
 
         // Create a second ship with a known name, then try to rename the first to match.
         mockMvc.perform(post("/api/ships").session(session)
@@ -193,8 +192,8 @@ class ShipControllerIT {
 
     @Test
     void renameOtherPlayersShipReturnsNotFound() throws Exception {
-        MockHttpSession data = registerAndLogin("data", "data@enterprise.example", "positronic1");
-        MockHttpSession laforge = registerAndLogin("laforge", "laforge@enterprise.example", "visor-on-12");
+        MockHttpSession data = registerAndLogin(mockMvc, objectMapper, "data", "data@enterprise.example", "positronic1");
+        MockHttpSession laforge = registerAndLogin(mockMvc, objectMapper, "laforge", "laforge@enterprise.example", "visor-on-12");
 
         String dataShipId = readFirstShipId(data);
 
@@ -208,21 +207,6 @@ class ShipControllerIT {
     }
 
     // --- helpers ---
-
-    private MockHttpSession registerAndLogin(String username, String email, String password) throws Exception {
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RegisterRequest(username, email, password))))
-                .andExpect(status().isCreated());
-
-        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequest(username, password))))
-                .andExpect(status().isNoContent())
-                .andReturn();
-
-        return (MockHttpSession) loginResult.getRequest().getSession(false);
-    }
 
     private String readFirstShipId(MockHttpSession session) throws Exception {
         MvcResult result = mockMvc.perform(get("/api/ships").session(session))
