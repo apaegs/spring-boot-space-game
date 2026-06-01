@@ -455,13 +455,6 @@
     border-color: #66ddff;
 }
 
-/* Readability override: pixel font is too dense for multi-line body copy */
-.ship-info,
-.orders-view,
-.selected-ship-panel__empty,
-.form-error,
-.game__query-error,
-.game__targeting-banner {
 .ship-info {
     display: grid;
     grid-template-columns: max-content auto;
