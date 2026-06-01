@@ -74,29 +74,22 @@ export function Game() {
     const planets = planetsQuery.data ?? []
     const selectedShip = ships.find((s) => s.id === selectedShipId) ?? null
 
-    // Build the on-map ship list: every world-ship entry, marked with isOwn
-    // based on whether it appears in the caller's own fleet. The backend
-    // returns own ships in /api/world/ships too, so we don't need to merge
-    // arrays — just tag. If world-ships hasn't loaded yet, fall back to the
-    // own-only list so the player's marker shows up immediately on first paint.
+    // Build the on-map ship list by merging the two ship sources. Own ships
+    // overlay world ships so the local data (which is optimistically updated
+    // on creation and refetched after a move) wins over the world poll. The
+    // earlier "branch entirely to world data once defined" approach had a bug:
+    // a ship created via `+ New ship` was added to the `['ships']` cache
+    // immediately but didn't appear on the world list until the next 5s
+    // poll — the new ship's marker was missing for up to a tick.
     const shipsOnMap: ShipOnMap[] = useMemo(() => {
-        const ownIds = new Set(ships.map((s) => s.id))
-        if (worldShipsQuery.data) {
-            return worldShipsQuery.data.map((s) => ({
-                id: s.id,
-                name: s.name,
-                x: s.x,
-                y: s.y,
-                isOwn: ownIds.has(s.id),
-            }))
+        const byId = new Map<string, ShipOnMap>()
+        for (const s of worldShipsQuery.data ?? []) {
+            byId.set(s.id, { id: s.id, name: s.name, x: s.x, y: s.y, isOwn: false })
         }
-        return ships.map((s) => ({
-            id: s.id,
-            name: s.name,
-            x: s.x,
-            y: s.y,
-            isOwn: true,
-        }))
+        for (const s of ships) {
+            byId.set(s.id, { id: s.id, name: s.name, x: s.x, y: s.y, isOwn: true })
+        }
+        return [...byId.values()]
     }, [ships, worldShipsQuery.data])
 
     // Targeting "follows" selection: if the player switches ships mid-target,
