@@ -27,6 +27,17 @@ export type MapSelection =
     | null
 
 /**
+ * What's currently under the cursor when a hover tooltip should show.
+ * Screen coordinates are canvas-relative — the React overlay positions the
+ * tooltip element off these. Emitted with {@code null} when the cursor leaves
+ * any entity, so the overlay can hide.
+ */
+export type HoverInfo =
+    | { kind: 'ship'; ship: ShipOnMap; screenX: number; screenY: number }
+    | { kind: 'planet'; planet: PlanetDto; screenX: number; screenY: number }
+    | null
+
+/**
  * PixiJS world map. Lives in {@code src/pixi/} per CLAUDE.md — React doesn't
  * reach in here, and this module doesn't reach into React. React talks to it
  * exclusively via the public methods below.
@@ -65,8 +76,21 @@ export class WorldMap {
      */
     private static readonly MARKER_MAX_HALF = WorldMap.TILE_PX / 2 - 0.5
 
-    private static readonly ZOOM_OUT = 1.0
-    private static readonly ZOOM_IN = 4.0
+    /**
+     * Zoom bounds. ZOOM_MIN = 1.0 fits the full 100×100 world in the 600px
+     * canvas. ZOOM_MAX = 10.0 gives a ~10×10-tile close-up (canvas / tile / 10).
+     * SELECTED_DEFAULT is the zoom level a fresh selection snaps to <i>only</i>
+     * when the player hasn't actively zoomed yet — once they touch the wheel,
+     * their level is preserved across selection changes.
+     */
+    private static readonly ZOOM_MIN = 1.0
+    private static readonly ZOOM_MAX = 10.0
+    private static readonly ZOOM_SELECTED_DEFAULT = 4.0
+    /**
+     * Multiplicative step per wheel notch. ~10 notches go MIN→MAX, which is
+     * close enough to "a few flicks of the wheel" without feeling jumpy.
+     */
+    private static readonly ZOOM_WHEEL_STEP = 1.25
 
     private static readonly COLORS = {
         background: 0x0a0a1a,
@@ -85,8 +109,25 @@ export class WorldMap {
     private app: Application | null = null
 
     // Camera state. The world layer is translated/scaled so that the tile at
-    // (camera.x, camera.y) ends up at the canvas centre.
-    private camera = { x: 50, y: 50, zoom: WorldMap.ZOOM_OUT }
+    // (camera.x, camera.y) ends up at the canvas centre. Zoom is user-driven
+    // (wheel) but bounded by ZOOM_MIN/ZOOM_MAX; position is selection-driven.
+    private camera = { x: 50, y: 50, zoom: WorldMap.ZOOM_MIN }
+
+    /**
+     * Has the player adjusted zoom manually? Used to decide whether a fresh
+     * selection should snap to {@link ZOOM_SELECTED_DEFAULT} (no — keep the
+     * "click ship → zoom in" feel) or preserve the user's current zoom (yes —
+     * don't yank the view they just set).
+     */
+    private userHasZoomed = false
+
+    /**
+     * The Pixi-mounted canvas. Held separately so listeners attached directly
+     * to the DOM (wheel, contextmenu) can be cleaned up on {@link destroy}.
+     */
+    private canvas: HTMLCanvasElement | null = null
+    private wheelHandler: ((e: WheelEvent) => void) | null = null
+    private contextMenuHandler: ((e: Event) => void) | null = null
 
     // Layers, all parented to worldLayer which carries the camera transform.
     private worldLayer: Container | null = null
@@ -107,6 +148,8 @@ export class WorldMap {
     private onTileClick: ((x: number, y: number) => void) | null = null
     private onShipClick: ((ship: ShipOnMap) => void) | null = null
     private onPlanetClick: ((planet: PlanetDto) => void) | null = null
+    private onRightClick: (() => void) | null = null
+    private onEntityHover: ((info: HoverInfo) => void) | null = null
 
     async init(parent: HTMLDivElement): Promise<void> {
         const app = new Application()
@@ -118,6 +161,7 @@ export class WorldMap {
         })
         parent.appendChild(app.canvas)
         this.app = app
+        this.canvas = app.canvas as HTMLCanvasElement
 
         // Background hit area — invisible rectangle covering the canvas so
         // pointer events fire even outside any sprite. Bound to the stage so
@@ -130,6 +174,15 @@ export class WorldMap {
         hit.on('pointermove', (e: FederatedPointerEvent) => this.handleHover(e))
         hit.on('pointerout', () => this.clearHover())
         app.stage.addChild(hit)
+
+        // DOM-level listeners. Wheel and contextmenu don't surface through
+        // Pixi's federated event system in a way we can use here — wheel
+        // needs preventDefault to stop page scroll, and contextmenu only
+        // exists on the DOM. Both are cleaned up in {@link destroy}.
+        this.wheelHandler = (e: WheelEvent) => this.handleWheel(e)
+        this.contextMenuHandler = (e: Event) => e.preventDefault()
+        this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false })
+        this.canvas.addEventListener('contextmenu', this.contextMenuHandler)
 
         // World layer holds everything that moves/zooms with the camera.
         this.worldLayer = new Container()
@@ -156,6 +209,15 @@ export class WorldMap {
     }
 
     destroy(): void {
+        if (this.canvas && this.wheelHandler) {
+            this.canvas.removeEventListener('wheel', this.wheelHandler)
+        }
+        if (this.canvas && this.contextMenuHandler) {
+            this.canvas.removeEventListener('contextmenu', this.contextMenuHandler)
+        }
+        this.canvas = null
+        this.wheelHandler = null
+        this.contextMenuHandler = null
         if (this.app) {
             this.app.destroy(true, { children: true, texture: true })
             this.app = null
@@ -223,14 +285,42 @@ export class WorldMap {
         this.onPlanetClick = callback
     }
 
+    /**
+     * Fired on any right-mouse-button press anywhere on the map — over a
+     * marker or empty tile, in any mode. The browser context menu is
+     * suppressed on the canvas so this is the only effect of a right click.
+     */
+    setOnRightClick(callback: (() => void) | null): void {
+        this.onRightClick = callback
+    }
+
+    /**
+     * Fired when the cursor enters or moves within a ship/planet marker, and
+     * with {@code null} when it leaves. Used by the React layer to drive
+     * a tooltip overlay. Markers go {@code eventMode = 'none'} in targeting
+     * mode, so this naturally stays silent there.
+     */
+    setOnEntityHover(callback: ((info: HoverInfo) => void) | null): void {
+        this.onEntityHover = callback
+    }
+
     // ---------- camera ----------
 
     private updateCameraForSelection(): void {
         const focus = this.resolveSelectionPosition()
         if (focus === null) {
-            this.camera = { x: 50, y: 50, zoom: WorldMap.ZOOM_OUT }
+            // Cleared selection: re-center on the world. Preserve the user's
+            // zoom — yanking it back to ZOOM_MIN every time you click "off"
+            // would be hostile if they'd zoomed in deliberately.
+            this.camera = { x: 50, y: 50, zoom: this.camera.zoom }
         } else {
-            this.camera = { x: focus.x, y: focus.y, zoom: WorldMap.ZOOM_IN }
+            // Snap the camera to the entity. Only auto-zoom if the player
+            // hasn't touched the wheel yet — keeps the original "click ship →
+            // zoom in" feel without overriding a user-chosen level later.
+            const nextZoom = this.userHasZoomed
+                ? this.camera.zoom
+                : WorldMap.ZOOM_SELECTED_DEFAULT
+            this.camera = { x: focus.x, y: focus.y, zoom: nextZoom }
         }
         this.applyCamera()
         // Grid density depends on zoom; redraw so per-tile lines appear/vanish.
@@ -318,15 +408,40 @@ export class WorldMap {
                 // In targeting mode the planet must NOT swallow the click —
                 // a MOVE-targeting click on a planet's tile is queued like any
                 // other tile click. Setting eventMode 'none' lets the click
-                // fall through to the background's hit area.
+                // fall through to the background's hit area. Hover/right-click
+                // both intentionally drop out here too: no tooltips during
+                // targeting (too noisy), and right-click cancels via the
+                // background handler instead.
                 dot.eventMode = 'none'
             } else {
                 dot.eventMode = 'static'
                 dot.cursor = 'pointer'
                 dot.on('pointerdown', (e: FederatedPointerEvent) => {
                     e.stopPropagation() // don't fall through to the tile click
+                    if (e.button === 2) {
+                        this.onRightClick?.()
+                        return
+                    }
+                    if (e.button !== 0) return
                     this.onPlanetClick?.(planet)
                 })
+                dot.on('pointerover', (e: FederatedPointerEvent) =>
+                    this.onEntityHover?.({
+                        kind: 'planet',
+                        planet,
+                        screenX: e.global.x,
+                        screenY: e.global.y,
+                    })
+                )
+                dot.on('pointermove', (e: FederatedPointerEvent) =>
+                    this.onEntityHover?.({
+                        kind: 'planet',
+                        planet,
+                        screenX: e.global.x,
+                        screenY: e.global.y,
+                    })
+                )
+                dot.on('pointerout', () => this.onEntityHover?.(null))
             }
             this.planetsLayer.addChild(dot)
 
@@ -374,8 +489,30 @@ export class WorldMap {
                 marker.cursor = 'pointer'
                 marker.on('pointerdown', (e: FederatedPointerEvent) => {
                     e.stopPropagation()
+                    if (e.button === 2) {
+                        this.onRightClick?.()
+                        return
+                    }
+                    if (e.button !== 0) return
                     this.onShipClick?.(ship)
                 })
+                marker.on('pointerover', (e: FederatedPointerEvent) =>
+                    this.onEntityHover?.({
+                        kind: 'ship',
+                        ship,
+                        screenX: e.global.x,
+                        screenY: e.global.y,
+                    })
+                )
+                marker.on('pointermove', (e: FederatedPointerEvent) =>
+                    this.onEntityHover?.({
+                        kind: 'ship',
+                        ship,
+                        screenX: e.global.x,
+                        screenY: e.global.y,
+                    })
+                )
+                marker.on('pointerout', () => this.onEntityHover?.(null))
             }
             this.shipsLayer.addChild(marker)
         }
@@ -384,9 +521,58 @@ export class WorldMap {
     // ---------- input ----------
 
     private handleBackgroundClick(event: FederatedPointerEvent): void {
+        // Right-click is universal "cancel / deselect" — it's the only effect
+        // a right press has, regardless of what's underneath.
+        if (event.button === 2) {
+            this.onRightClick?.()
+            return
+        }
+        if (event.button !== 0) return // middle / aux buttons: ignore
         if (!this.onTileClick) return
         const tile = this.screenToTile(event.global.x, event.global.y)
         if (tile) this.onTileClick(tile.x, tile.y)
+    }
+
+    /**
+     * Mouse-wheel zoom. Clamped to {@link ZOOM_MIN}…{@link ZOOM_MAX}. When the
+     * player has no selection, the zoom is centred on the cursor (the world
+     * tile under the cursor stays fixed). When something is selected the
+     * camera is selection-locked, so we just change zoom and let the next
+     * {@link setShips}/{@link setPlanets} re-snap as the entity moves.
+     */
+    private handleWheel(event: WheelEvent): void {
+        if (!this.canvas) return
+        event.preventDefault()
+
+        const direction = event.deltaY < 0 ? 1 : -1
+        const factor = direction > 0 ? WorldMap.ZOOM_WHEEL_STEP : 1 / WorldMap.ZOOM_WHEEL_STEP
+        const oldZoom = this.camera.zoom
+        const newZoom = clamp(oldZoom * factor, WorldMap.ZOOM_MIN, WorldMap.ZOOM_MAX)
+        if (newZoom === oldZoom) return
+
+        // Cursor-centered: pin the world point under the cursor across the
+        // zoom change. Only applies when there's no selection — with a
+        // selection active the camera is locked to the entity and shifting
+        // it here would just be undone on the next setShips/setPlanets call.
+        if (this.selection === null) {
+            const rect = this.canvas.getBoundingClientRect()
+            const cursorX = event.clientX - rect.left
+            const cursorY = event.clientY - rect.top
+            const halfCanvas = WorldMap.CANVAS_PX / 2
+            const worldPx = (cursorX - halfCanvas) / oldZoom + this.camera.x * WorldMap.TILE_PX
+            const worldPy = (cursorY - halfCanvas) / oldZoom + this.camera.y * WorldMap.TILE_PX
+            this.camera = {
+                x: (worldPx - (cursorX - halfCanvas) / newZoom) / WorldMap.TILE_PX,
+                y: (worldPy - (cursorY - halfCanvas) / newZoom) / WorldMap.TILE_PX,
+                zoom: newZoom,
+            }
+        } else {
+            this.camera = { ...this.camera, zoom: newZoom }
+        }
+        this.userHasZoomed = true
+        this.applyCamera()
+        this.drawGrid()
+        this.renderSelectionRing()
     }
 
     private handleHover(event: FederatedPointerEvent): void {
@@ -481,4 +667,8 @@ export class WorldMap {
             py: (y + 0.5) * WorldMap.TILE_PX,
         }
     }
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value))
 }

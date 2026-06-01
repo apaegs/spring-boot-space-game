@@ -119,33 +119,38 @@ export function Game() {
             setActionMode({ type: 'idle' })
             return
         }
-        // Normal mode: clicking an empty tile deselects the current entity.
+        // Normal mode: left-click on empty space is a no-op. Deselection lives
+        // on the right mouse button — see {@link onRightClick}.
+    }
+
+    /**
+     * Right-mouse-button anywhere on the map. RTS-style "cancel / deselect":
+     * during targeting it aborts the action; otherwise it clears the current
+     * selection. The Pixi layer suppresses the browser context menu, so this
+     * is the only effect a right press has.
+     */
+    const onRightClick = () => {
+        if (actionMode.type === 'targetingMove') {
+            setActionMode({ type: 'idle' })
+            return
+        }
         setSelection(null)
     }
 
     // Ship and planet clicks only select in normal mode. WorldMap stops
     // firing these callbacks in targeting mode (markers become transparent
     // to pointer events), so we don't need a runtime guard here — but the
-    // defensive check costs nothing and keeps intent explicit.
+    // defensive check costs nothing and keeps intent explicit. Deselection
+    // lives on the right mouse button alone; clicking an already-selected
+    // marker is a no-op so left-click only ever <i>selects</i>.
     const onShipClick = (ship: ShipOnMap) => {
         if (isTargetingActive) return
-        // Clicking the already-selected ship deselects it; clicking a
-        // different ship selects it.
-        if (selection?.kind === 'ship' && selection.id === ship.id) {
-            setSelection(null)
-        } else {
-            setSelection({ kind: 'ship', id: ship.id })
-        }
+        setSelection({ kind: 'ship', id: ship.id })
     }
 
     const onPlanetClick = (planetId: string) => {
         if (isTargetingActive) return
-        // Clicking the already-selected planet deselects it.
-        if (selection?.kind === 'planet' && selection.id === planetId) {
-            setSelection(null)
-        } else {
-            setSelection({ kind: 'planet', id: planetId })
-        }
+        setSelection({ kind: 'planet', id: planetId })
     }
 
     const startMoveTargeting = () => {
@@ -189,6 +194,7 @@ export function Game() {
                     onTileClick={onTileClick}
                     onShipClick={onShipClick}
                     onPlanetClick={(p) => onPlanetClick(p.id)}
+                    onRightClick={onRightClick}
                 />
 
                 {isTargetingActive && (
