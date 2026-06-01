@@ -65,8 +65,6 @@ export type PublicShipDto = {
 export type WorldDto = {
     currentTick: number
     lastTickAt: string
-    gridWidth: number
-    gridHeight: number
 }
 
 // --- planets ---

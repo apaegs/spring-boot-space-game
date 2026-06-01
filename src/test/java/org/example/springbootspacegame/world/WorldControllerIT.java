@@ -53,9 +53,12 @@ class WorldControllerIT {
         mockMvc.perform(get("/api/world").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentTick").value(1))
-                .andExpect(jsonPath("$.gridWidth").value(100))
-                .andExpect(jsonPath("$.gridHeight").value(100))
-                .andExpect(jsonPath("$.lastTickAt").isNotEmpty());
+                .andExpect(jsonPath("$.lastTickAt").isNotEmpty())
+                // Grid size is a compile-time constant (WorldConstants.GRID_SIZE),
+                // not part of the API contract — assert it's absent so a future
+                // reintroduction is a deliberate decision, not a silent regression.
+                .andExpect(jsonPath("$.gridWidth").doesNotExist())
+                .andExpect(jsonPath("$.gridHeight").doesNotExist());
     }
 
     @Test

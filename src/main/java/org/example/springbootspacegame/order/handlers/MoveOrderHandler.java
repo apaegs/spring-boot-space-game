@@ -5,6 +5,7 @@ import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderResult;
 import org.example.springbootspacegame.order.ShipOrder;
 import org.example.springbootspacegame.ship.Ship;
+import org.example.springbootspacegame.world.WorldConstants;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -33,9 +34,10 @@ public class MoveOrderHandler implements OrderHandler {
         }
         int xi = ((Number) x).intValue();
         int yi = ((Number) y).intValue();
-        if (xi < 0 || xi >= 100 || yi < 0 || yi >= 100) {
+        int size = WorldConstants.GRID_SIZE;
+        if (xi < 0 || xi >= size || yi < 0 || yi >= size) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "MOVE target must be inside the 100x100 grid (0 <= x,y < 100)");
+                    "MOVE target must be inside the " + size + "x" + size + " grid (0 <= x,y < " + size + ")");
         }
     }
 

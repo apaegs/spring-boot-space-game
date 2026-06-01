@@ -16,9 +16,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ShipService {
 
-    // Center of the 100x100 grid. Hard-coded for v1 — deterministic for tests
-    // and a single source of truth for "where new players appear". See #29
-    // (single source of truth for grid size) for the longer-term decision.
+    // Center of the grid. Hard-coded for v1 — deterministic for tests and a
+    // single source of truth for "where new players appear". Grid bounds live
+    // in WorldConstants; spawn point is a separate game-design choice, not
+    // derived from grid size.
     static final int SPAWN_X = 50;
     static final int SPAWN_Y = 50;
 
