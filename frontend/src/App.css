@@ -152,6 +152,41 @@
 
 .world-map {
     line-height: 0;
+    position: relative; /* tooltip overlay anchors here */
+}
+
+/* Hover tooltip over ships and planets. Positioned by JS in canvas-relative
+   coordinates; pointer-events disabled so the tooltip never eats clicks /
+   pointermoves on the markers below it. */
+.world-map__tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(20, 20, 42, 0.92);
+    border: 1px solid #2a2a45;
+    color: #e8e8f0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    z-index: 5;
+}
+
+.world-map__tooltip-name {
+    font-weight: 500;
+}
+
+.world-map__tooltip-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #66ddff;
+    border: 1px solid #66ddff;
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
 }
 
 .game__targeting-banner {
