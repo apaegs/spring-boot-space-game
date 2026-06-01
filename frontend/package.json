@@ -14,6 +14,7 @@
     },
     "dependencies": {
         "@tanstack/react-query": "^5.100.14",
+        "framer-motion": "^12.40.0",
         "pixi.js": "^8.18.1",
         "react": "^19.2.6",
         "react-dom": "^19.2.6",

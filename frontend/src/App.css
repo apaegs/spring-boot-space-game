@@ -614,18 +614,13 @@
 }
 
 /* ----- tick counter (used in header) ----- */
+/* The flash animation itself lives in TickCounter.tsx (framer-motion). This
+   class is layout-only; the background-color is driven by the JS animation. */
 
 .tick-counter {
     display: inline-block;
     padding: 0 0.3rem;
     border-radius: 3px;
-    background-color: transparent;
-    transition: background-color 0.4s ease-out;
     color: #fff;
     font-weight: 500;
-}
-
-.tick-counter--flash {
-    background-color: rgba(102, 221, 255, 0.4);
-    transition: background-color 0s;
 }
