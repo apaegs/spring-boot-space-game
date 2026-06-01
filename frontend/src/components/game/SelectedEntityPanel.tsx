@@ -214,6 +214,8 @@ function OwnShipInfo({ ship, currentTick }: { ship: ShipDto; currentTick: number
             <dd>
                 ({ship.x}, {ship.y})
             </dd>
+            <dt>Status</dt>
+            <dd>{ship.status.charAt(0) + ship.status.slice(1).toLowerCase()}</dd>
             <dt>World tick</dt>
             <dd>{currentTick ?? '—'}</dd>
             <dt>Created</dt>

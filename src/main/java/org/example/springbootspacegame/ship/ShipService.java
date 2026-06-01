@@ -3,6 +3,10 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
+import org.example.springbootspacegame.order.OrderKind;
+import org.example.springbootspacegame.order.OrderStatus;
+import org.example.springbootspacegame.order.ShipOrderRepository;
+import org.example.springbootspacegame.planet.PlanetRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,8 +27,12 @@ public class ShipService {
     static final int SPAWN_X = 50;
     static final int SPAWN_Y = 50;
 
+    private static final List<OrderStatus> ACTIVE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.ACTIVE);
+
     private final ShipRepository shipRepository;
     private final UserRepository userRepository;
+    private final ShipOrderRepository shipOrderRepository;
+    private final PlanetRepository planetRepository;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
@@ -60,7 +68,8 @@ public class ShipService {
 
         Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y);
         try {
-            return ShipDto.from(shipRepository.saveAndFlush(ship));
+            Ship saved = shipRepository.saveAndFlush(ship);
+            return ShipDto.from(saved, deriveStatus(saved));
         } catch (DataIntegrityViolationException e) {
             // Only reachable if a player-supplied custom name collides with an
             // existing ship's name. Auto-named conflicts can't reach here
@@ -73,7 +82,7 @@ public class ShipService {
     @Transactional(readOnly = true)
     public List<ShipDto> listForUser(UUID userId) {
         return shipRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
-                .map(ShipDto::from)
+                .map(ship -> ShipDto.from(ship, deriveStatus(ship)))
                 .toList();
     }
 
@@ -106,7 +115,8 @@ public class ShipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
         ship.rename(name);
         try {
-            return ShipDto.from(shipRepository.saveAndFlush(ship));
+            Ship saved = shipRepository.saveAndFlush(ship);
+            return ShipDto.from(saved, deriveStatus(saved));
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A ship named '" + name + "' already exists", e);
@@ -117,6 +127,33 @@ public class ShipService {
     public Ship requireOwnedShip(UUID userId, UUID shipId) {
         return shipRepository.findByIdAndUserId(shipId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
+    }
+
+    /**
+     * Derives the read-time {@link ShipStatus} for a ship without storing it.
+     *
+     * <ul>
+     *   <li>MOVING — ship has at least one PENDING or ACTIVE order</li>
+     *   <li>LANDED — no active orders AND the ship's last completed order was LAND</li>
+     *   <li>IDLE   — anything else</li>
+     * </ul>
+     *
+     * <p>LANDED is intentionally order-history-based, not coordinate-based.
+     * A ship that simply stops on a planet tile without issuing a LAND order
+     * is IDLE — matching the domain rule that landing is an explicit action.
+     *
+     * <p>Must be called within an active transaction so the repository calls
+     * participate in the same snapshot.
+     */
+    private ShipStatus deriveStatus(Ship ship) {
+        if (shipOrderRepository.existsByShipIdAndStatusIn(ship.getId(), ACTIVE_STATUSES)) {
+            return ShipStatus.MOVING;
+        }
+        return shipOrderRepository
+                .findFirstByShipIdAndStatusOrderByCompletedAtDesc(ship.getId(), OrderStatus.COMPLETED)
+                .filter(o -> o.getKind() == OrderKind.LAND)
+                .map(o -> ShipStatus.LANDED)
+                .orElse(ShipStatus.IDLE);
     }
 
     private static String autoName(String username, long existingCount) {
