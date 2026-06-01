@@ -29,6 +29,21 @@ public interface ShipOrderRepository extends JpaRepository<ShipOrder, UUID> {
     Optional<ShipOrder> findByIdAndShipId(UUID id, UUID shipId);
 
     /**
+     * "Is this ship busy?" — returns {@code true} if the ship has at least one
+     * order in any of the given statuses. Used by {@link org.example.springbootspacegame.ship.ShipService}
+     * to derive {@link org.example.springbootspacegame.ship.ShipStatus#MOVING}.
+     * Hits the partial index {@code ship_orders_active_idx} (V4) — single seek.
+     */
+    boolean existsByShipIdAndStatusIn(UUID shipId, java.util.Collection<OrderStatus> statuses);
+
+    /**
+     * The most recently completed order for a ship. Used to derive
+     * {@link org.example.springbootspacegame.ship.ShipStatus#LANDED}: a ship is
+     * LANDED when its last completed order was a LAND.
+     */
+    Optional<ShipOrder> findFirstByShipIdAndStatusOrderByCompletedAtDesc(UUID shipId, OrderStatus status);
+
+    /**
      * Distinct ship IDs that have at least one order in any of the given statuses.
      * Used by the tick processor to scope "which ships need processing this tick"
      * to just the ones with queued work — most ships idle most of the time.

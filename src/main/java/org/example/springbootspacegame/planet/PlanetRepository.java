@@ -13,4 +13,12 @@ public interface PlanetRepository extends JpaRepository<Planet, UUID> {
      * Hits the {@code planets_xy_unique} index, single seek.
      */
     Optional<Planet> findByXAndY(int x, int y);
+
+    /**
+     * Cheaper than {@link #findByXAndY} when the caller only needs to know
+     * whether a planet exists at the given coordinates — used by
+     * {@link org.example.springbootspacegame.ship.ShipService} to derive
+     * {@link org.example.springbootspacegame.ship.ShipStatus#LANDED}.
+     */
+    boolean existsByXAndY(int x, int y);
 }

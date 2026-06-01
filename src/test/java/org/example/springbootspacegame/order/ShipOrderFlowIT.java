@@ -3,8 +3,6 @@ package org.example.springbootspacegame.order;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springbootspacegame.IntegrationTest;
-import org.example.springbootspacegame.auth.LoginRequest;
-import org.example.springbootspacegame.auth.RegisterRequest;
 import org.example.springbootspacegame.tick.TickService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.example.springbootspacegame.MockMvcHelper.registerAndLogin;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -60,7 +59,7 @@ class ShipOrderFlowIT {
 
     @Test
     void moveOrderAdvancesShipChebyshevAndCompletesOnArrival() throws Exception {
-        MockHttpSession session = registerAndLogin("sisko", "sisko@enterprise.example", "deep-space-niner");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "sisko", "sisko@enterprise.example", "deep-space-niner");
         UUID shipId = firstShipIdFor(session);
 
         // Player spawns at (50, 50); send the ship to (52, 53).
@@ -91,7 +90,7 @@ class ShipOrderFlowIT {
     void landOnPlanetCompletesInOneTick() throws Exception {
         // Player spawns at (50, 50) — Earth is seeded there in V5, so LAND
         // succeeds immediately without any MOVE first.
-        MockHttpSession session = registerAndLogin("janeway", "janeway@enterprise.example", "coffee-black-1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "janeway", "janeway@enterprise.example", "coffee-black-1");
         UUID shipId = firstShipIdFor(session);
 
         UUID orderId = postOrder(session, shipId, "LAND", Map.of());
@@ -104,7 +103,7 @@ class ShipOrderFlowIT {
 
     @Test
     void landOffPlanetCancelsWithReason() throws Exception {
-        MockHttpSession session = registerAndLogin("picard", "picard@enterprise.example", "engage-warp-7");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "picard", "picard@enterprise.example", "engage-warp-7");
         UUID shipId = firstShipIdFor(session);
 
         // MOVE one tile off-spawn (Earth is at 50,50), then LAND on an empty
@@ -122,7 +121,7 @@ class ShipOrderFlowIT {
 
     @Test
     void invalidMoveParamsReturn400() throws Exception {
-        MockHttpSession session = registerAndLogin("worf", "worf@enterprise.example", "klingon-honor1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "worf", "worf@enterprise.example", "klingon-honor1");
         UUID shipId = firstShipIdFor(session);
 
         // Missing y
@@ -144,7 +143,7 @@ class ShipOrderFlowIT {
 
     @Test
     void cancelPendingOrderTakesItOutOfTheQueue() throws Exception {
-        MockHttpSession session = registerAndLogin("tuvok", "tuvok@enterprise.example", "logical-choice");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "tuvok", "tuvok@enterprise.example", "logical-choice");
         UUID shipId = firstShipIdFor(session);
 
         UUID first = postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 60)); // ACTIVE after first tick
@@ -165,7 +164,7 @@ class ShipOrderFlowIT {
 
     @Test
     void ordersProcessInQueueOrder() throws Exception {
-        MockHttpSession session = registerAndLogin("ezri", "ezri@enterprise.example", "joined-trill1");
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "ezri", "ezri@enterprise.example", "joined-trill1");
         UUID shipId = firstShipIdFor(session);
 
         // Three-step plan: move to Mars (60,55), land there.
@@ -191,8 +190,8 @@ class ShipOrderFlowIT {
         // Two players. Bob shouldn't be able to read, queue, or cancel against
         // Alice's ship — the ownership check should 404 (not 403, to avoid
         // confirming Alice's ship exists).
-        MockHttpSession alice = registerAndLogin("alice", "alice@example.com", "password-alice-1");
-        MockHttpSession bob = registerAndLogin("bob", "bob@example.com", "password-bob-12");
+        MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice", "alice@example.com", "password-alice-1");
+        MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob", "bob@example.com", "password-bob-12");
         UUID aliceShipId = firstShipIdFor(alice);
         UUID aliceOrderId = postOrder(alice, aliceShipId, "MOVE", Map.of("x", 70, "y", 70));
 
@@ -214,21 +213,6 @@ class ShipOrderFlowIT {
     }
 
     // --- helpers ---
-
-    private MockHttpSession registerAndLogin(String username, String email, String password) throws Exception {
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RegisterRequest(username, email, password))))
-                .andExpect(status().isCreated());
-
-        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequest(username, password))))
-                .andExpect(status().isNoContent())
-                .andReturn();
-
-        return (MockHttpSession) loginResult.getRequest().getSession(false);
-    }
 
     private UUID firstShipIdFor(MockHttpSession session) throws Exception {
         MvcResult result = mockMvc.perform(get("/api/ships").session(session))
