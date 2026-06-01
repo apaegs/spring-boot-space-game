@@ -176,7 +176,7 @@ export function Game() {
                 <WorldMapView
                     planets={planets}
                     ships={shipsOnMap}
-                    selectedShipId={selectedShipId}
+                    selection={selection}
                     isTargeting={isTargetingActive}
                     onTileClick={onTileClick}
                     onShipClick={onShipClick}

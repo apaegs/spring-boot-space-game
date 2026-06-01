@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { WorldMap, type ShipOnMap } from '../pixi/WorldMap'
+import { WorldMap, type MapSelection, type ShipOnMap } from '../pixi/WorldMap'
 import type { PlanetDto } from '../types/api'
 
 type WorldMapViewProps = {
@@ -10,7 +10,8 @@ type WorldMapViewProps = {
      * fetch; it just draws what it's handed.
      */
     ships: ShipOnMap[]
-    selectedShipId: string | null
+    /** What the player has selected. Drives camera focus and ship-marker highlight. */
+    selection: MapSelection
     /**
      * Whether the map is in targeting mode (Move/Land action awaiting a tile
      * pick). Affects pointer-event capture inside the map: in targeting mode,
@@ -39,7 +40,7 @@ type WorldMapViewProps = {
 export function WorldMapView({
     planets,
     ships,
-    selectedShipId,
+    selection,
     isTargeting,
     onTileClick,
     onShipClick,
@@ -53,7 +54,7 @@ export function WorldMapView({
     // and any subsequent renders.
     const planetsRef = useRef(planets)
     const shipsRef = useRef(ships)
-    const selectedShipIdRef = useRef(selectedShipId)
+    const selectionRef = useRef(selection)
     const isTargetingRef = useRef(isTargeting)
     const onTileClickRef = useRef(onTileClick)
     const onShipClickRef = useRef(onShipClick)
@@ -65,8 +66,8 @@ export function WorldMapView({
         shipsRef.current = ships
     }, [ships])
     useEffect(() => {
-        selectedShipIdRef.current = selectedShipId
-    }, [selectedShipId])
+        selectionRef.current = selection
+    }, [selection])
     useEffect(() => {
         isTargetingRef.current = isTargeting
     }, [isTargeting])
@@ -97,7 +98,8 @@ export function WorldMapView({
             // would be missing.
             map.setTargetingMode(isTargetingRef.current)
             map.setPlanets(planetsRef.current)
-            map.setShips(shipsRef.current, selectedShipIdRef.current)
+            map.setShips(shipsRef.current)
+            map.setSelection(selectionRef.current)
             map.setOnTileClick((x, y) => onTileClickRef.current?.(x, y))
             map.setOnShipClick((ship) => onShipClickRef.current?.(ship))
             map.setOnPlanetClick((planet) => onPlanetClickRef.current?.(planet))
@@ -118,8 +120,12 @@ export function WorldMapView({
     }, [planets])
 
     useEffect(() => {
-        mapRef.current?.setShips(ships, selectedShipId)
-    }, [ships, selectedShipId])
+        mapRef.current?.setShips(ships)
+    }, [ships])
+
+    useEffect(() => {
+        mapRef.current?.setSelection(selection)
+    }, [selection])
 
     useEffect(() => {
         mapRef.current?.setTargetingMode(isTargeting)
