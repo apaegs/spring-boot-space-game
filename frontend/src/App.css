@@ -1,4 +1,16 @@
 /* ============================================================
+ * Fonts
+ * ============================================================ */
+
+@font-face {
+    font-family: 'Bitcell';
+    src: url('/fonts/bitcell_memesbruh03.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ============================================================
  * Auth pages (login / register) — unchanged from v1.
  * ============================================================ */
 
@@ -83,7 +95,7 @@
     width: 100vw;
     background: #0a0a1a;
     color: #e8e8f0;
-    font-family: system-ui, sans-serif;
+    font-family: 'Bitcell', system-ui, sans-serif;
 }
 
 .game--targeting .world-map canvas {
@@ -443,6 +455,16 @@
 .tab--active {
     color: #fff;
     border-color: #66ddff;
+}
+
+/* Readability override: pixel font is too dense for multi-line body copy */
+.ship-info,
+.orders-view,
+.selected-ship-panel__empty,
+.form-error,
+.game__query-error,
+.game__targeting-banner {
+    font-family: system-ui, sans-serif;
 }
 
 .ship-info {
