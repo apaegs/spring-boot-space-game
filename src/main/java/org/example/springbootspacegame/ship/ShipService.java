@@ -1,52 +1,99 @@
 package org.example.springbootspacegame.ship;
 
 import lombok.RequiredArgsConstructor;
+import org.example.springbootspacegame.auth.User;
+import org.example.springbootspacegame.auth.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class ShipService {
 
-    // Center of the 100x100 grid. Hard-coded for v1 — deterministic for tests and a
-    // single source of truth for "where new players appear". Will move to WorldState
-    // once issue #5 lands and grid size becomes a runtime value.
+    // Center of the 100x100 grid. Hard-coded for v1 — deterministic for tests
+    // and a single source of truth for "where new players appear". See #29
+    // (single source of truth for grid size) for the longer-term decision.
     static final int SPAWN_X = 50;
     static final int SPAWN_Y = 50;
 
     private final ShipRepository shipRepository;
+    private final UserRepository userRepository;
 
     /**
-     * Creates the user's starting mothership. Called from {@code AuthService.register}
-     * inside the same transaction, so a failure here rolls the user creation back too.
-     *
-     * <p>v1 invariant: one ship per user. We re-check {@code existsByUserId} as
-     * defense-in-depth — currently this can only be reached from a fresh registration,
-     * but if {@code createForUser} ever gets called elsewhere this prevents a duplicate.
+     * Create the auto-mothership for a brand-new user. Called from
+     * {@code AuthService.register} inside the same transaction as the user
+     * insert. No concurrency concern — only the registration flow can reach
+     * this user before commit.
      */
     @Transactional
-    public Ship createForUser(UUID userId, String username) {
-        if (shipRepository.existsByUserId(userId)) {
-            throw new IllegalStateException("User " + userId + " already has a ship");
-        }
-        Ship ship = new Ship(userId, defaultShipName(username), SPAWN_X, SPAWN_Y);
+    public Ship createForNewUser(UUID userId, String username) {
+        Ship ship = new Ship(userId, autoName(username, 0), SPAWN_X, SPAWN_Y);
         return shipRepository.save(ship);
     }
 
-    @Transactional(readOnly = true)
-    public ShipDto getForUser(UUID userId) {
-        Ship ship = shipRepository.findByUserId(userId)
-                // Should not happen for a registered user — auto-create runs in the same
-                // transaction as user creation. Return 404 if it ever does, rather than 500.
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No ship for user"));
-        return ShipDto.from(ship);
+    /**
+     * Create an additional ship for an existing player ({@code POST /api/ships}).
+     *
+     * <p>Race control: takes a {@code SELECT ... FOR UPDATE} on the caller's
+     * user row, which serializes all concurrent ship-create transactions for
+     * the same user. With the lock held, {@link ShipRepository#countByUserId}
+     * is safe to base the next auto-name on. The unique constraint on
+     * {@code (user_id, name)} in V6 is defence-in-depth for any case the lock
+     * misses or a player-supplied custom name collides.
+     */
+    @Transactional
+    public ShipDto createShipForCurrentUser(UUID userId, CreateShipRequest request) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+
+        String desired = request != null ? request.name() : null;
+        String name = desired != null
+                ? desired
+                : autoName(user.getUsername(), shipRepository.countByUserId(userId));
+
+        Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y);
+        try {
+            return ShipDto.from(shipRepository.saveAndFlush(ship));
+        } catch (DataIntegrityViolationException e) {
+            // Only reachable if a player-supplied custom name collides with an
+            // existing ship's name. Auto-named conflicts can't reach here
+            // because of the per-user lock above.
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A ship named '" + name + "' already exists", e);
+        }
     }
 
-    private static String defaultShipName(String username) {
-        return username + "'s ship";
+    @Transactional(readOnly = true)
+    public List<ShipDto> listForUser(UUID userId) {
+        return shipRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
+                .map(ShipDto::from)
+                .toList();
+    }
+
+    /**
+     * Ownership-checked lookup used by ship-scoped endpoints (orders etc.).
+     * Throws 404 if the ship doesn't exist or belongs to someone else —
+     * deliberately indistinguishable from the outside so we don't leak the
+     * existence of other users' ships.
+     */
+    @Transactional(readOnly = true)
+    public Ship requireOwnedShip(UUID userId, UUID shipId) {
+        return shipRepository.findByIdAndUserId(shipId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
+    }
+
+    private static String autoName(String username, long existingCount) {
+        // First ship: "<username>'s ship" (matches the historic single-ship name).
+        // Subsequent ships: "<username>'s ship 2", "<username>'s ship 3", ...
+        if (existingCount == 0) {
+            return username + "'s ship";
+        }
+        return username + "'s ship " + (existingCount + 1);
     }
 }

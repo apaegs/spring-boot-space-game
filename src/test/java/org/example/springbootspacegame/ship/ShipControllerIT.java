@@ -1,5 +1,6 @@
 package org.example.springbootspacegame.ship;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springbootspacegame.IntegrationTest;
 import org.example.springbootspacegame.auth.LoginRequest;
@@ -16,7 +17,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -42,19 +43,18 @@ class ShipControllerIT {
     }
 
     @Test
-    void newlyRegisteredUserGetsAShipAtSpawn() throws Exception {
+    void newlyRegisteredUserHasOneShipAtSpawn() throws Exception {
         String username = "spock";
         MockHttpSession session = registerAndLogin(username, "spock@enterprise.example", "live-long-prosper");
 
-        mockMvc.perform(get("/api/ship").session(session))
+        mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.name").value(username + "'s ship"))
-                .andExpect(jsonPath("$.x").value(50))
-                .andExpect(jsonPath("$.y").value(50))
-                .andExpect(jsonPath("$.destinationX").doesNotExist())
-                .andExpect(jsonPath("$.destinationY").doesNotExist())
-                .andExpect(jsonPath("$.createdAt").isNotEmpty());
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").isNotEmpty())
+                .andExpect(jsonPath("$[0].name").value(username + "'s ship"))
+                .andExpect(jsonPath("$[0].x").value(50))
+                .andExpect(jsonPath("$[0].y").value(50))
+                .andExpect(jsonPath("$[0].createdAt").isNotEmpty());
     }
 
     @Test
@@ -62,16 +62,14 @@ class ShipControllerIT {
         MockHttpSession alice = registerAndLogin("alice", "alice@example.com", "password-alice-1");
         MockHttpSession bob = registerAndLogin("bob", "bob@example.com", "password-bob-12");
 
-        String aliceShipId = readShipId(alice);
-        String bobShipId = readShipId(bob);
-
-        // Different rows: different IDs, both names follow the spawn convention.
-        org.junit.jupiter.api.Assertions.assertNotEquals(aliceShipId, bobShipId);
+        String aliceShipId = readFirstShipId(alice);
+        String bobShipId = readFirstShipId(bob);
+        assertNotEquals(aliceShipId, bobShipId);
     }
 
     @Test
-    void shipEndpointRequiresAuth() throws Exception {
-        mockMvc.perform(get("/api/ship"))
+    void shipsEndpointRequiresAuth() throws Exception {
+        mockMvc.perform(get("/api/ships"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -79,12 +77,66 @@ class ShipControllerIT {
     void shipPositionIsWithinGrid() throws Exception {
         MockHttpSession session = registerAndLogin("uhura", "uhura@enterprise.example", "frequency-open-1");
 
-        mockMvc.perform(get("/api/ship").session(session))
+        mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.x", greaterThanOrEqualTo(0)))
-                .andExpect(jsonPath("$.x", lessThan(100)))
-                .andExpect(jsonPath("$.y", greaterThanOrEqualTo(0)))
-                .andExpect(jsonPath("$.y", lessThan(100)));
+                .andExpect(jsonPath("$[0].x", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$[0].x", lessThan(100)))
+                .andExpect(jsonPath("$[0].y", greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$[0].y", lessThan(100)));
+    }
+
+    @Test
+    void canCreateAdditionalShipsAndTheyGetNumberedNames() throws Exception {
+        String username = "kira";
+        MockHttpSession session = registerAndLogin(username, "kira@enterprise.example", "deep-space-niner");
+
+        // The auto-created mothership keeps the bare name; subsequent ships get
+        // numbered suffixes. Tests both: the default-named first ship was created
+        // at register time; we POST two more and check the numbering.
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value(username + "'s ship 2"));
+
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value(username + "'s ship 3"));
+
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
+    void canCreateShipWithCustomName() throws Exception {
+        MockHttpSession session = registerAndLogin("worf", "worf@enterprise.example", "klingon-honor1");
+
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "Bird-of-Prey" }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Bird-of-Prey"));
+    }
+
+    @Test
+    void createShipWithWhitespaceNameFallsBackToAutoName() throws Exception {
+        String username = "tuvok";
+        MockHttpSession session = registerAndLogin(username, "tuvok@enterprise.example", "logical-choice");
+
+        // Whitespace-only name in the request body trims to empty, which we
+        // treat as "no name supplied" → auto-generated.
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "   " }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value(username + "'s ship 2"));
     }
 
     // --- helpers ---
@@ -104,12 +156,11 @@ class ShipControllerIT {
         return (MockHttpSession) loginResult.getRequest().getSession(false);
     }
 
-    private String readShipId(MockHttpSession session) throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/ship").session(session))
+    private String readFirstShipId(MockHttpSession session) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id", not("")))
                 .andReturn();
-        com.fasterxml.jackson.databind.JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return body.get("id").asText();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        return body.get(0).get("id").asText();
     }
 }

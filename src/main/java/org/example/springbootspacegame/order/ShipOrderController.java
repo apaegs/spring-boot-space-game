@@ -20,32 +20,34 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The caller's ship's order queue. Singular {@code /api/ship/orders} because v1
- * has one ship per user — when fleet support arrives this becomes
- * {@code /api/ships/{shipId}/orders}.
+ * Ship-scoped order queue. The {@code {shipId}} path param is ownership-checked
+ * in {@link ShipOrderService#appendOrder} / {@code listForShip} / {@code cancelOrder}
+ * via {@code ShipService.requireOwnedShip} — 404 if the ship doesn't belong to
+ * the caller, indistinguishable from "ship doesn't exist".
  */
 @RestController
-@RequestMapping("/api/ship/orders")
+@RequestMapping("/api/ships/{shipId}/orders")
 @RequiredArgsConstructor
 public class ShipOrderController {
 
     private final ShipOrderService orderService;
 
     @GetMapping
-    public List<ShipOrderDto> list() {
-        return orderService.listForUser(currentUserId());
+    public List<ShipOrderDto> list(@PathVariable UUID shipId) {
+        return orderService.listForShip(currentUserId(), shipId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ShipOrderDto append(@Valid @RequestBody CreateOrderRequest request) {
-        return orderService.appendOrder(currentUserId(), request);
+    public ShipOrderDto append(@PathVariable UUID shipId,
+                               @Valid @RequestBody CreateOrderRequest request) {
+        return orderService.appendOrder(currentUserId(), shipId, request);
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{orderId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancel(@PathVariable UUID id) {
-        orderService.cancelOrder(currentUserId(), id);
+    public void cancel(@PathVariable UUID shipId, @PathVariable UUID orderId) {
+        orderService.cancelOrder(currentUserId(), shipId, orderId);
     }
 
     private static UUID currentUserId() {

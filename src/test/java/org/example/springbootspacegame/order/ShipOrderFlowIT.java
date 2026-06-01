@@ -61,24 +61,25 @@ class ShipOrderFlowIT {
     @Test
     void moveOrderAdvancesShipChebyshevAndCompletesOnArrival() throws Exception {
         MockHttpSession session = registerAndLogin("sisko", "sisko@enterprise.example", "deep-space-niner");
+        UUID shipId = firstShipIdFor(session);
 
         // Player spawns at (50, 50); send the ship to (52, 53).
-        UUID orderId = postOrder(session, "MOVE", Map.of("x", 52, "y", 53));
+        UUID orderId = postOrder(session, shipId, "MOVE", Map.of("x", 52, "y", 53));
 
         // Tick 1: diagonal step toward target -> (51, 51)
         tickService.advanceTick();
-        assertShipAt(session, 51, 51);
+        assertShipAt(session, shipId, 51, 51);
 
         // Tick 2: diagonal again -> (52, 52)
         tickService.advanceTick();
-        assertShipAt(session, 52, 52);
+        assertShipAt(session, shipId, 52, 52);
 
         // Tick 3: only y axis left -> (52, 53), arrived, order completes.
         tickService.advanceTick();
-        assertShipAt(session, 52, 53);
+        assertShipAt(session, shipId, 52, 53);
 
         // After completion, the order leaves the visible queue.
-        mockMvc.perform(get("/api/ship/orders").session(session))
+        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
@@ -91,8 +92,9 @@ class ShipOrderFlowIT {
         // Player spawns at (50, 50) — Earth is seeded there in V5, so LAND
         // succeeds immediately without any MOVE first.
         MockHttpSession session = registerAndLogin("janeway", "janeway@enterprise.example", "coffee-black-1");
+        UUID shipId = firstShipIdFor(session);
 
-        UUID orderId = postOrder(session, "LAND", Map.of());
+        UUID orderId = postOrder(session, shipId, "LAND", Map.of());
 
         tickService.advanceTick();
 
@@ -103,11 +105,12 @@ class ShipOrderFlowIT {
     @Test
     void landOffPlanetCancelsWithReason() throws Exception {
         MockHttpSession session = registerAndLogin("picard", "picard@enterprise.example", "engage-warp-7");
+        UUID shipId = firstShipIdFor(session);
 
         // MOVE one tile off-spawn (Earth is at 50,50), then LAND on an empty
         // tile — LAND should cancel because there's no planet under the ship.
-        postOrder(session, "MOVE", Map.of("x", 51, "y", 50));
-        UUID landId = postOrder(session, "LAND", Map.of());
+        postOrder(session, shipId, "MOVE", Map.of("x", 51, "y", 50));
+        UUID landId = postOrder(session, shipId, "LAND", Map.of());
 
         tickService.advanceTick(); // MOVE completes (51, 50)
         tickService.advanceTick(); // LAND fires, finds no planet, cancels
@@ -120,9 +123,10 @@ class ShipOrderFlowIT {
     @Test
     void invalidMoveParamsReturn400() throws Exception {
         MockHttpSession session = registerAndLogin("worf", "worf@enterprise.example", "klingon-honor1");
+        UUID shipId = firstShipIdFor(session);
 
         // Missing y
-        mockMvc.perform(post("/api/ship/orders").session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 10 } }
@@ -130,7 +134,7 @@ class ShipOrderFlowIT {
                 .andExpect(status().isBadRequest());
 
         // Out of range
-        mockMvc.perform(post("/api/ship/orders").session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 999, "y": 999 } }
@@ -141,15 +145,16 @@ class ShipOrderFlowIT {
     @Test
     void cancelPendingOrderTakesItOutOfTheQueue() throws Exception {
         MockHttpSession session = registerAndLogin("tuvok", "tuvok@enterprise.example", "logical-choice");
+        UUID shipId = firstShipIdFor(session);
 
-        UUID first = postOrder(session, "MOVE", Map.of("x", 60, "y", 60)); // ACTIVE after first tick
-        UUID second = postOrder(session, "LAND", Map.of());                // still PENDING
+        UUID first = postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 60)); // ACTIVE after first tick
+        UUID second = postOrder(session, shipId, "LAND", Map.of());                // still PENDING
 
         // Cancel the pending LAND before any tick fires.
-        mockMvc.perform(delete("/api/ship/orders/{id}", second).session(session))
+        mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", shipId, second).session(session))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/ship/orders").session(session))
+        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").value(first.toString()));
@@ -161,25 +166,51 @@ class ShipOrderFlowIT {
     @Test
     void ordersProcessInQueueOrder() throws Exception {
         MockHttpSession session = registerAndLogin("ezri", "ezri@enterprise.example", "joined-trill1");
+        UUID shipId = firstShipIdFor(session);
 
         // Three-step plan: move to Mars (60,55), land there.
         // Spawn is (50,50); Chebyshev distance to (60,55) is 10 steps.
-        postOrder(session, "MOVE", Map.of("x", 60, "y", 55));
-        postOrder(session, "LAND", Map.of());
+        postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 55));
+        postOrder(session, shipId, "LAND", Map.of());
 
-        // 10 ticks for the MOVE.
         for (int i = 0; i < 10; i++) {
             tickService.advanceTick();
         }
-        assertShipAt(session, 60, 55);
+        assertShipAt(session, shipId, 60, 55);
 
-        // Eleventh tick fires LAND on Mars.
-        tickService.advanceTick();
+        tickService.advanceTick(); // LAND fires on Mars
 
         List<ShipOrder> active = orderRepository
                 .findByShipIdAndStatusInOrderByCreatedAtAsc(
-                        shipIdFor(session), List.of(OrderStatus.PENDING, OrderStatus.ACTIVE));
-        assertThat(active).isEmpty(); // both orders completed
+                        shipId, List.of(OrderStatus.PENDING, OrderStatus.ACTIVE));
+        assertThat(active).isEmpty();
+    }
+
+    @Test
+    void cannotPokeOtherPlayersShipsOrOrders() throws Exception {
+        // Two players. Bob shouldn't be able to read, queue, or cancel against
+        // Alice's ship — the ownership check should 404 (not 403, to avoid
+        // confirming Alice's ship exists).
+        MockHttpSession alice = registerAndLogin("alice", "alice@example.com", "password-alice-1");
+        MockHttpSession bob = registerAndLogin("bob", "bob@example.com", "password-bob-12");
+        UUID aliceShipId = firstShipIdFor(alice);
+        UUID aliceOrderId = postOrder(alice, aliceShipId, "MOVE", Map.of("x", 70, "y", 70));
+
+        mockMvc.perform(get("/api/ships/{shipId}/orders", aliceShipId).session(bob))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/ships/{shipId}/orders", aliceShipId).session(bob)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "kind": "MOVE", "params": { "x": 70, "y": 70 } }
+                                """))
+                .andExpect(status().isNotFound());
+
+        // Cancel path too — ownership-404 should be uniform across verbs so
+        // Bob can't probe the existence of Alice's specific order id.
+        mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", aliceShipId, aliceOrderId)
+                        .session(bob))
+                .andExpect(status().isNotFound());
     }
 
     // --- helpers ---
@@ -199,9 +230,18 @@ class ShipOrderFlowIT {
         return (MockHttpSession) loginResult.getRequest().getSession(false);
     }
 
-    private UUID postOrder(MockHttpSession session, String kind, Map<String, Object> params) throws Exception {
+    private UUID firstShipIdFor(MockHttpSession session) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andReturn();
+        return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
+                .get(0).get("id").asText());
+    }
+
+    private UUID postOrder(MockHttpSession session, UUID shipId, String kind, Map<String, Object> params)
+            throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("kind", kind, "params", params));
-        MvcResult result = mockMvc.perform(post("/api/ship/orders").session(session)
+        MvcResult result = mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
@@ -210,18 +250,24 @@ class ShipOrderFlowIT {
         return UUID.fromString(json.get("id").asText());
     }
 
-    private void assertShipAt(MockHttpSession session, int x, int y) throws Exception {
-        mockMvc.perform(get("/api/ship").session(session))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.x").value(x))
-                .andExpect(jsonPath("$.y").value(y));
-    }
-
-    private UUID shipIdFor(MockHttpSession session) throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/ship").session(session))
+    private void assertShipAt(MockHttpSession session, UUID shipId, int x, int y) throws Exception {
+        // GET /api/ships returns a list; we look up by ID so multi-ship tests
+        // remain robust to other ships moving in parallel.
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
                 .andReturn();
-        return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
-                .get("id").asText());
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode ship = findShipById(body, shipId);
+        assertThat(ship.get("x").asInt()).isEqualTo(x);
+        assertThat(ship.get("y").asInt()).isEqualTo(y);
+    }
+
+    private static JsonNode findShipById(JsonNode shipsArray, UUID shipId) {
+        for (JsonNode ship : shipsArray) {
+            if (shipId.toString().equals(ship.get("id").asText())) {
+                return ship;
+            }
+        }
+        throw new AssertionError("Ship " + shipId + " not in response");
     }
 }
