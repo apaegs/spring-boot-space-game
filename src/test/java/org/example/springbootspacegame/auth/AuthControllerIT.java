@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -72,8 +73,8 @@ class AuthControllerIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value(username));
 
-        // logout
-        mockMvc.perform(post("/api/auth/logout").session(session))
+        // logout — state-changing, needs CSRF (not exempted like /login & /register)
+        mockMvc.perform(post("/api/auth/logout").session(session).with(csrf()))
                 .andExpect(status().isNoContent());
     }
 

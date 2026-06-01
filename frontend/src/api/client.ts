@@ -3,6 +3,9 @@
  *   - sends/receives JSON
  *   - rides session cookies (`credentials: 'include'` — required so
  *     JSESSIONID set by the backend gets stored and replayed)
+ *   - reads the CSRF token from the {@code XSRF-TOKEN} cookie and echoes
+ *     it as the {@code X-XSRF-TOKEN} header on every state-changing
+ *     request (POST/PUT/PATCH/DELETE)
  *   - turns non-2xx responses into typed `ApiError`s the UI can branch on
  *
  * Each endpoint-specific module (auth, ship, world, planets, orders) builds
@@ -24,12 +27,38 @@ type RequestOptions = {
     signal?: AbortSignal
 }
 
+/**
+ * Methods that the server's CSRF filter expects a token on. Safe methods
+ * (GET/HEAD/OPTIONS/TRACE) are skipped — sending a token on them costs
+ * nothing but it's not part of the contract.
+ */
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * Read the {@code XSRF-TOKEN} cookie value. Returns null when no cookie is
+ * set yet (very first page load before any backend response has landed) —
+ * callers tolerate the missing header on register/login (those endpoints are
+ * CSRF-exempt server-side) and never reach a state-changing call before some
+ * GET has populated the cookie elsewhere.
+ */
+function readCsrfToken(): string | null {
+    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)
+    return match ? decodeURIComponent(match[1]) : null
+}
+
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+    const headers: Record<string, string> = {}
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+    if (STATE_CHANGING_METHODS.has(method)) {
+        const csrf = readCsrfToken()
+        if (csrf) headers['X-XSRF-TOKEN'] = csrf
+    }
+
     const init: RequestInit = {
         method,
         credentials: 'include',
         signal: options.signal,
-        headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     }
 
