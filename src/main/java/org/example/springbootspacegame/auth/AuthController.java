@@ -22,6 +22,32 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * HTTP entry point for the four auth endpoints: register, login, logout, /me.
+ * The controller is intentionally thin — business logic (user lookup, password
+ * hashing, the DTO shape) lives in {@link AuthService}; this class is the
+ * transport layer per the CLAUDE.md convention.
+ *
+ * <p>One thing that <i>isn't</i> in AuthService and lives here on purpose:
+ * the session + SecurityContext handling around {@link #login}. Because we
+ * authenticate manually via {@link AuthenticationManager} (we don't use
+ * Spring's {@code UsernamePasswordAuthenticationFilter}), the work that
+ * filter would normally do for us has to happen here explicitly:
+ * <ul>
+ *   <li>Session-fixation protection by rotating the session id if one
+ *       already existed pre-auth. Mirrors
+ *       {@code ChangeSessionIdAuthenticationStrategy}.</li>
+ *   <li>Persisting the {@link SecurityContext} into the configured
+ *       {@link SecurityContextRepository} so subsequent requests can
+ *       resolve the authenticated principal from {@code JSESSIONID}
+ *       without re-authenticating each time.</li>
+ * </ul>
+ *
+ * <p>{@link #login} catches {@link BadCredentialsException} explicitly and
+ * remaps it to a 401 — the default Spring response would be 500-ish via the
+ * generic exception path, which leaks implementation detail and confuses
+ * clients about whether to retry.
+ */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
