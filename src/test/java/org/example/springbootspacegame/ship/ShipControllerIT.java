@@ -217,14 +217,14 @@ class ShipControllerIT {
     // --- status ---
 
     @Test
-    void newShipAtSpawnIsLandedBecauseEarthIsThereWithNoOrders() throws Exception {
-        // Spawn is (50,50) — Earth is seeded there in V5. A ship with no orders
-        // sitting on a planet tile is LANDED per the status rules.
+    void newShipWithNoOrdersIsIdle() throws Exception {
+        // A freshly spawned ship has no completed orders, so LANDED requires an
+        // explicit LAND order — it must be IDLE until one completes.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-spawn", "status-spawn@example.com", "password-spawn1");
 
         mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("LANDED"));
+                .andExpect(jsonPath("$[0].status").value("IDLE"));
     }
 
     @Test
@@ -232,13 +232,21 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-move", "status-move@example.com", "password-move1");
         String shipId = readFirstShipId(session);
 
-        // Queue a MOVE order — ship should immediately become MOVING before any tick fires.
+        // Queue a MOVE order far enough away that it won't complete in one tick.
         mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("kind", "MOVE", "params", Map.of("x", 60, "y", 60)))))
                 .andExpect(status().isCreated());
 
+        // PENDING branch
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("MOVING"));
+
+        tickService.advanceTick(); // order transitions PENDING → ACTIVE
+
+        // ACTIVE branch
         mockMvc.perform(get("/api/ships").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("MOVING"));

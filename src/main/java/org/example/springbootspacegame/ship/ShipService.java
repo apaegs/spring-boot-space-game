@@ -3,6 +3,7 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
+import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderStatus;
 import org.example.springbootspacegame.order.ShipOrderRepository;
 import org.example.springbootspacegame.planet.PlanetRepository;
@@ -132,10 +133,14 @@ public class ShipService {
      * Derives the read-time {@link ShipStatus} for a ship without storing it.
      *
      * <ul>
-     *   <li>MOVING  — ship has at least one PENDING or ACTIVE order</li>
-     *   <li>LANDED  — no active orders AND ship is sitting on a planet tile</li>
-     *   <li>IDLE    — no active orders AND ship is not on a planet tile</li>
+     *   <li>MOVING — ship has at least one PENDING or ACTIVE order</li>
+     *   <li>LANDED — no active orders AND the ship's last completed order was LAND</li>
+     *   <li>IDLE   — anything else</li>
      * </ul>
+     *
+     * <p>LANDED is intentionally order-history-based, not coordinate-based.
+     * A ship that simply stops on a planet tile without issuing a LAND order
+     * is IDLE — matching the domain rule that landing is an explicit action.
      *
      * <p>Must be called within an active transaction so the repository calls
      * participate in the same snapshot.
@@ -144,10 +149,11 @@ public class ShipService {
         if (shipOrderRepository.existsByShipIdAndStatusIn(ship.getId(), ACTIVE_STATUSES)) {
             return ShipStatus.MOVING;
         }
-        if (planetRepository.existsByXAndY(ship.getX(), ship.getY())) {
-            return ShipStatus.LANDED;
-        }
-        return ShipStatus.IDLE;
+        return shipOrderRepository
+                .findFirstByShipIdAndStatusOrderByCompletedAtDesc(ship.getId(), OrderStatus.COMPLETED)
+                .filter(o -> o.getKind() == OrderKind.LAND)
+                .map(o -> ShipStatus.LANDED)
+                .orElse(ShipStatus.IDLE);
     }
 
     private static String autoName(String username, long existingCount) {

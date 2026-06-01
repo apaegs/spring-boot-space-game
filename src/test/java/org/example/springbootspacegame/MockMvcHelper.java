@@ -51,6 +51,10 @@ public final class MockMvcHelper {
                 .andExpect(status().isNoContent())
                 .andReturn();
 
-        return (MockHttpSession) loginResult.getRequest().getSession(false);
+        MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+        if (session == null) {
+            throw new AssertionError("Login did not create an authenticated session for user '" + username + "'");
+        }
+        return session;
     }
 }
