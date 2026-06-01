@@ -1,5 +1,20 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text, TextStyle } from 'pixi.js'
-import type { PlanetDto, ShipDto } from '../types/api'
+import type { PlanetDto } from '../types/api'
+
+/**
+ * Map-level view model for any ship — own or foreign. The React layer projects
+ * its {@code ShipDto} / {@code PublicShipDto} sources into this uniform shape
+ * before handing them down. {@code isOwn} drives the marker color and (in the
+ * future) any owner-only affordances; nothing about the click handling cares
+ * about ownership.
+ */
+export type ShipOnMap = {
+    id: string
+    name: string
+    x: number
+    y: number
+    isOwn: boolean
+}
 
 /**
  * PixiJS world map. Lives in {@code src/pixi/} per CLAUDE.md — React doesn't
@@ -13,11 +28,20 @@ import type { PlanetDto, ShipDto } from '../types/api'
  * is a snap in v1; smooth interpolation lands as a follow-up — keeping the
  * implementation small while the rest of the UI churns.
  *
- * <h3>Tile clicks</h3>
- * The whole canvas is one big invisible hit area on the background layer. On
- * click, the screen coordinates are inverted through the camera transform to
- * a tile coordinate, and {@code onTileClick(x, y)} fires. Out-of-bounds clicks
- * are dropped silently.
+ * <h3>Click semantics</h3>
+ * Two modes:
+ * <ul>
+ *   <li><b>Normal</b>: ship-and-planet markers capture clicks ({@code
+ *       onShipClick} / {@code onPlanetClick} fire, the tile underneath does
+ *       <i>not</i> fire). Empty-tile clicks call {@code onTileClick}. UI uses
+ *       this for "select that thing".</li>
+ *   <li><b>Targeting</b> (set via {@link setTargetingMode}): ships and planets
+ *       become transparent to pointer events ({@code eventMode = 'none'}), so
+ *       a click anywhere — including on top of a planet's disc or another
+ *       ship's triangle — falls through to the background and fires
+ *       {@code onTileClick} for the tile under the cursor. Lets the player
+ *       MOVE-target a planet's tile without the planet "swallowing" the click.</li>
+ * </ul>
  */
 export class WorldMap {
     private static readonly CANVAS_PX = 600
@@ -33,7 +57,8 @@ export class WorldMap {
         gridLineMinor: 0x12122a,
         planet: 0xffaa00,
         planetLabel: 0xffffff,
-        ship: 0x66ddff,
+        shipOwn: 0x66ddff,
+        shipForeign: 0xc266aa,
         shipSelected: 0xfff066,
         shipOutline: 0xffffff,
         hover: 0x66ddff,
@@ -55,11 +80,13 @@ export class WorldMap {
     // Cached so we can re-render when selection / zoom changes without the
     // caller having to keep passing the same arrays.
     private planets: PlanetDto[] = []
-    private ships: ShipDto[] = []
+    private ships: ShipOnMap[] = []
     private selectedShipId: string | null = null
     private hoverTile: { x: number; y: number } | null = null
+    private targeting = false
 
     private onTileClick: ((x: number, y: number) => void) | null = null
+    private onShipClick: ((ship: ShipOnMap) => void) | null = null
     private onPlanetClick: ((planet: PlanetDto) => void) | null = null
 
     async init(parent: HTMLDivElement): Promise<void> {
@@ -122,15 +149,32 @@ export class WorldMap {
         this.renderPlanets()
     }
 
-    setShips(ships: ShipDto[], selectedShipId: string | null): void {
+    setShips(ships: ShipOnMap[], selectedShipId: string | null): void {
         this.ships = ships
         this.selectedShipId = selectedShipId
         this.updateCameraForSelection()
         this.renderShips()
     }
 
+    /**
+     * Toggle pointer-event transparency on ships + planets. In targeting mode,
+     * clicks pass through markers to the background's tile-click handler — the
+     * player can MOVE-target a planet's tile without the planet swallowing the
+     * click. Normal mode restores marker-level handlers.
+     */
+    setTargetingMode(active: boolean): void {
+        if (this.targeting === active) return
+        this.targeting = active
+        this.renderShips()
+        this.renderPlanets()
+    }
+
     setOnTileClick(callback: ((x: number, y: number) => void) | null): void {
         this.onTileClick = callback
+    }
+
+    setOnShipClick(callback: ((ship: ShipOnMap) => void) | null): void {
+        this.onShipClick = callback
     }
 
     setOnPlanetClick(callback: ((planet: PlanetDto) => void) | null): void {
@@ -208,12 +252,20 @@ export class WorldMap {
             dot.fill({ color: WorldMap.COLORS.planet, alpha: 0 })
             dot.circle(px, py, 4)
             dot.fill(WorldMap.COLORS.planet)
-            dot.eventMode = 'static'
-            dot.cursor = 'pointer'
-            dot.on('pointerdown', (e: FederatedPointerEvent) => {
-                e.stopPropagation() // don't fall through to the tile click
-                this.onPlanetClick?.(planet)
-            })
+            if (this.targeting) {
+                // In targeting mode the planet must NOT swallow the click —
+                // a MOVE-targeting click on a planet's tile is queued like any
+                // other tile click. Setting eventMode 'none' lets the click
+                // fall through to the background's hit area.
+                dot.eventMode = 'none'
+            } else {
+                dot.eventMode = 'static'
+                dot.cursor = 'pointer'
+                dot.on('pointerdown', (e: FederatedPointerEvent) => {
+                    e.stopPropagation() // don't fall through to the tile click
+                    this.onPlanetClick?.(planet)
+                })
+            }
             this.planetsLayer.addChild(dot)
 
             const label = new Text({
@@ -239,12 +291,30 @@ export class WorldMap {
             const { px, py } = WorldMap.tileToPx(ship.x, ship.y)
 
             const marker = new Graphics()
-            // Triangle pointing up. Selected ship gets a slightly larger / brighter
-            // marker so it's distinguishable in a crowded tile.
+            // Triangle pointing up. Selected ship gets a slightly larger
+            // marker so it's distinguishable in a crowded tile. Foreign
+            // ships are magenta; own ships cyan; either turns yellow when
+            // selected (selection trumps ownership in the color decision so
+            // the player can always find their current focus).
             const size = isSelected ? 4 : 3
             marker.poly([px, py - size, px + size, py + size, px - size, py + size])
-            marker.fill(isSelected ? WorldMap.COLORS.shipSelected : WorldMap.COLORS.ship)
+            const fillColor = isSelected
+                ? WorldMap.COLORS.shipSelected
+                : ship.isOwn
+                  ? WorldMap.COLORS.shipOwn
+                  : WorldMap.COLORS.shipForeign
+            marker.fill(fillColor)
             marker.stroke({ color: WorldMap.COLORS.shipOutline, width: 1 })
+            if (this.targeting) {
+                marker.eventMode = 'none'
+            } else {
+                marker.eventMode = 'static'
+                marker.cursor = 'pointer'
+                marker.on('pointerdown', (e: FederatedPointerEvent) => {
+                    e.stopPropagation()
+                    this.onShipClick?.(ship)
+                })
+            }
             this.shipsLayer.addChild(marker)
         }
     }

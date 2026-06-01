@@ -1,21 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ApiError } from '../api/client'
 import { createOrder } from '../api/orders'
 import { listPlanets } from '../api/planets'
 import { listMyShips } from '../api/ship'
-import { getWorld } from '../api/world'
+import { getWorld, listWorldShips } from '../api/world'
 import { GameHeader } from '../components/game/GameHeader'
 import { SelectedShipPanel } from '../components/game/SelectedShipPanel'
 import { ShipList } from '../components/game/ShipList'
 import { WorldMapView } from '../components/WorldMapView'
+import type { ShipOnMap } from '../pixi/WorldMap'
 import { useSelection } from '../selection/SelectionContext'
 
 const POLL_MS = 5000
 
 /**
  * Top-level game view. Owns:
- *   - Ship list polling (drives selection options + camera target).
+ *   - Own-ship list polling (drives sidebar + own marker colors).
+ *   - World-ship list polling (drives foreign ship rendering on the map).
  *   - World/tick polling (drives header counter and gameplay heartbeat).
  *   - Planet list (static — staleTime: Infinity).
  *   - Action-mode state and the map-click handler that closes the loop
@@ -32,12 +34,18 @@ type ActionMode = { type: 'idle' } | { type: 'targetingMove'; shipId: string }
 
 export function Game() {
     const queryClient = useQueryClient()
-    const { selectedShipId } = useSelection()
+    const { selectedShipId, setSelection } = useSelection()
     const [actionMode, setActionMode] = useState<ActionMode>({ type: 'idle' })
 
     const shipsQuery = useQuery({
         queryKey: ['ships'],
         queryFn: ({ signal }) => listMyShips(signal),
+        refetchInterval: POLL_MS,
+    })
+
+    const worldShipsQuery = useQuery({
+        queryKey: ['world-ships'],
+        queryFn: ({ signal }) => listWorldShips(signal),
         refetchInterval: POLL_MS,
     })
 
@@ -53,10 +61,38 @@ export function Game() {
         staleTime: Infinity,
     })
 
-    const ships = shipsQuery.data ?? []
+    // Stabilize the array references so {@code useMemo} below treats the
+    // empty-state fallback as stable across renders. Without this, the
+    // `?? []` would mint a fresh array each render and bust the memo.
+    const ships = useMemo(() => shipsQuery.data ?? [], [shipsQuery.data])
     const world = worldQuery.data
     const planets = planetsQuery.data ?? []
     const selectedShip = ships.find((s) => s.id === selectedShipId) ?? null
+
+    // Build the on-map ship list: every world-ship entry, marked with isOwn
+    // based on whether it appears in the caller's own fleet. The backend
+    // returns own ships in /api/world/ships too, so we don't need to merge
+    // arrays — just tag. If world-ships hasn't loaded yet, fall back to the
+    // own-only list so the player's marker shows up immediately on first paint.
+    const shipsOnMap: ShipOnMap[] = useMemo(() => {
+        const ownIds = new Set(ships.map((s) => s.id))
+        if (worldShipsQuery.data) {
+            return worldShipsQuery.data.map((s) => ({
+                id: s.id,
+                name: s.name,
+                x: s.x,
+                y: s.y,
+                isOwn: ownIds.has(s.id),
+            }))
+        }
+        return ships.map((s) => ({
+            id: s.id,
+            name: s.name,
+            x: s.x,
+            y: s.y,
+            isOwn: true,
+        }))
+    }, [ships, worldShipsQuery.data])
 
     // Targeting "follows" selection: if the player switches ships mid-target,
     // the targeting visually de-activates immediately. State stays put for one
@@ -85,18 +121,34 @@ export function Game() {
         setActionMode({ type: 'idle' })
     }
 
+    // Ship and planet clicks only select in normal mode. WorldMap stops
+    // firing these callbacks in targeting mode (markers become transparent
+    // to pointer events), so we don't need a runtime guard here — but the
+    // defensive check costs nothing and keeps intent explicit.
+    const onShipClick = (ship: ShipOnMap) => {
+        if (isTargetingActive) return
+        setSelection({ kind: 'ship', id: ship.id })
+    }
+
+    const onPlanetClick = (planetId: string) => {
+        if (isTargetingActive) return
+        setSelection({ kind: 'planet', id: planetId })
+    }
+
     const startMoveTargeting = () => {
         if (!selectedShip) return
         setActionMode({ type: 'targetingMove', shipId: selectedShip.id })
     }
 
-    // Surface any of the three root queries failing. Without this, a backend
+    // Surface any of the four root queries failing. Without this, a backend
     // hiccup just shows an empty map + "Loading…" sidebar forever — the player
     // can't tell whether it's a slow first load or a real problem.
-    const queryError = shipsQuery.error ?? worldQuery.error ?? planetsQuery.error
+    const queryError =
+        shipsQuery.error ?? worldQuery.error ?? worldShipsQuery.error ?? planetsQuery.error
 
     const retryAll = () => {
         void shipsQuery.refetch()
+        void worldShipsQuery.refetch()
         void worldQuery.refetch()
         void planetsQuery.refetch()
     }
@@ -118,9 +170,12 @@ export function Game() {
 
                 <WorldMapView
                     planets={planets}
-                    ships={ships}
+                    ships={shipsOnMap}
                     selectedShipId={selectedShipId}
+                    isTargeting={isTargetingActive}
                     onTileClick={onTileClick}
+                    onShipClick={onShipClick}
+                    onPlanetClick={(p) => onPlanetClick(p.id)}
                 />
 
                 {isTargetingActive && (
@@ -149,6 +204,10 @@ export function Game() {
                         onPickMoveTarget={startMoveTargeting}
                     />
                 )}
+                {/* Foreign-ship + planet info panels land in the next commit
+                    (SelectedShipPanel → SelectedEntityPanel refactor). For
+                    now, selecting a planet only updates selection state — the
+                    panel space below stays empty until the entity panel ships. */}
             </aside>
         </div>
     )
