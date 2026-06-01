@@ -31,12 +31,15 @@ export type LoginRequest = {
 
 // --- ship ---
 
+export type ShipStatus = 'IDLE' | 'MOVING' | 'LANDED'
+
 export type ShipDto = {
     id: string
     name: string
     x: number
     y: number
     createdAt: string
+    status: ShipStatus
 }
 
 /**

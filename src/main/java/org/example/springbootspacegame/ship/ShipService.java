@@ -3,6 +3,9 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
+import org.example.springbootspacegame.order.OrderStatus;
+import org.example.springbootspacegame.order.ShipOrderRepository;
+import org.example.springbootspacegame.planet.PlanetRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,8 +26,12 @@ public class ShipService {
     static final int SPAWN_X = 50;
     static final int SPAWN_Y = 50;
 
+    private static final List<OrderStatus> ACTIVE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.ACTIVE);
+
     private final ShipRepository shipRepository;
     private final UserRepository userRepository;
+    private final ShipOrderRepository shipOrderRepository;
+    private final PlanetRepository planetRepository;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
@@ -60,7 +67,8 @@ public class ShipService {
 
         Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y);
         try {
-            return ShipDto.from(shipRepository.saveAndFlush(ship));
+            Ship saved = shipRepository.saveAndFlush(ship);
+            return ShipDto.from(saved, deriveStatus(saved));
         } catch (DataIntegrityViolationException e) {
             // Only reachable if a player-supplied custom name collides with an
             // existing ship's name. Auto-named conflicts can't reach here
@@ -73,7 +81,7 @@ public class ShipService {
     @Transactional(readOnly = true)
     public List<ShipDto> listForUser(UUID userId) {
         return shipRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
-                .map(ShipDto::from)
+                .map(ship -> ShipDto.from(ship, deriveStatus(ship)))
                 .toList();
     }
 
@@ -106,7 +114,8 @@ public class ShipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
         ship.rename(name);
         try {
-            return ShipDto.from(shipRepository.saveAndFlush(ship));
+            Ship saved = shipRepository.saveAndFlush(ship);
+            return ShipDto.from(saved, deriveStatus(saved));
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A ship named '" + name + "' already exists", e);
@@ -117,6 +126,28 @@ public class ShipService {
     public Ship requireOwnedShip(UUID userId, UUID shipId) {
         return shipRepository.findByIdAndUserId(shipId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ship not found"));
+    }
+
+    /**
+     * Derives the read-time {@link ShipStatus} for a ship without storing it.
+     *
+     * <ul>
+     *   <li>MOVING  — ship has at least one PENDING or ACTIVE order</li>
+     *   <li>LANDED  — no active orders AND ship is sitting on a planet tile</li>
+     *   <li>IDLE    — no active orders AND ship is not on a planet tile</li>
+     * </ul>
+     *
+     * <p>Must be called within an active transaction so the repository calls
+     * participate in the same snapshot.
+     */
+    private ShipStatus deriveStatus(Ship ship) {
+        if (shipOrderRepository.existsByShipIdAndStatusIn(ship.getId(), ACTIVE_STATUSES)) {
+            return ShipStatus.MOVING;
+        }
+        if (planetRepository.existsByXAndY(ship.getX(), ship.getY())) {
+            return ShipStatus.LANDED;
+        }
+        return ShipStatus.IDLE;
     }
 
     private static String autoName(String username, long existingCount) {

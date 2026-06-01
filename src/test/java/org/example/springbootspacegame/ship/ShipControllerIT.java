@@ -3,6 +3,9 @@ package org.example.springbootspacegame.ship;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springbootspacegame.IntegrationTest;
+
+
+import org.example.springbootspacegame.tick.TickService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +17,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.example.springbootspacegame.MockMvcHelper.registerAndLogin;
+import java.util.Map;
+
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -29,6 +34,9 @@ class ShipControllerIT {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
+
+    @Autowired
+    private TickService tickService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -204,6 +212,75 @@ class ShipControllerIT {
                                 { "name": "Stolen" }
                                 """))
                 .andExpect(status().isNotFound());
+    }
+
+    // --- status ---
+
+    @Test
+    void newShipAtSpawnIsLandedBecauseEarthIsThereWithNoOrders() throws Exception {
+        // Spawn is (50,50) — Earth is seeded there in V5. A ship with no orders
+        // sitting on a planet tile is LANDED per the status rules.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-spawn", "status-spawn@example.com", "password-spawn1");
+
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("LANDED"));
+    }
+
+    @Test
+    void shipWithPendingOrderIsMoving() throws Exception {
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-move", "status-move@example.com", "password-move1");
+        String shipId = readFirstShipId(session);
+
+        // Queue a MOVE order — ship should immediately become MOVING before any tick fires.
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("kind", "MOVE", "params", Map.of("x", 60, "y", 60)))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("MOVING"));
+    }
+
+    @Test
+    void shipOffPlanetWithNoOrdersIsIdle() throws Exception {
+        // Move the ship one tile off Earth (50,50) → (51,50), then confirm
+        // there are no pending orders and status is IDLE (not on a planet).
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-idle", "status-idle@example.com", "password-idle1");
+        String shipId = readFirstShipId(session);
+
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("kind", "MOVE", "params", Map.of("x", 51, "y", 50)))))
+                .andExpect(status().isCreated());
+
+        tickService.advanceTick(); // MOVE completes — ship at (51,50), no planet there
+
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("IDLE"));
+    }
+
+    @Test
+    void shipLandedOnPlanetIsLanded() throws Exception {
+        // Spawn is at (50,50) where Earth is seeded (V5). Queue LAND, fire one
+        // tick so the order completes, then check status = LANDED.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-land", "status-land@example.com", "password-land1");
+        String shipId = readFirstShipId(session);
+
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("kind", "LAND", "params", Map.of()))))
+                .andExpect(status().isCreated());
+
+        tickService.advanceTick(); // LAND order completes
+
+        mockMvc.perform(get("/api/ships").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("LANDED"));
     }
 
     // --- helpers ---
