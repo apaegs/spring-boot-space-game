@@ -50,7 +50,9 @@ A player-controlled vessel. **A User can have any number of Ships** (the auto-cr
 | y               | INT          | 0 ≤ y < grid_height                                     |
 | created_at      | TIMESTAMPTZ  | default `now()`                                         |
 
-**Ownership**: every ship-scoped endpoint (`GET /api/ships/{id}/...`, `POST /api/ships/{id}/orders`, etc.) checks that the `{shipId}` belongs to the caller via `ShipService.requireOwnedShip`. A non-owned ship ID 404s — deliberately indistinguishable from "ship doesn't exist" so the API doesn't leak other users' ship IDs.
+**Ownership**: every ship-scoped *action* endpoint (`GET /api/ships/{id}/...`, `POST /api/ships/{id}/orders`, etc.) checks that the `{shipId}` belongs to the caller via `ShipService.requireOwnedShip`. A non-owned ship ID 404s — deliberately indistinguishable from "ship doesn't exist" so the API doesn't leak other users' ship IDs through the action surface.
+
+**Public visibility**: a separate, narrower projection — `PublicShipDto` (id, name, x, y) — is exposed via `GET /api/world/ships` so the map can render every player's ships. No owner identity, no audit timestamps. Public ids are knowable; they just can't be used to *do* anything against ships you don't own (the action endpoints still 404). Introduced in #35 when foreign ships became visible on the shared map.
 
 **Position vs. orders**: a ship is at a single tile `(x, y)`. What it's currently *doing* lives in the order queue (see `ShipOrder` below), not on the ship row. Earlier v1 drafts had `destination_x/y` columns directly on the ship; those were dropped in V4 when the orders queue replaced them.
 
