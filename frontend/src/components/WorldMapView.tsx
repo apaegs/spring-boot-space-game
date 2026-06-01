@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { WorldMap, type HoverInfo, type MapSelection, type ShipOnMap } from '../pixi/WorldMap'
 import type { PlanetDto } from '../types/api'
 
@@ -199,30 +199,63 @@ export function WorldMapView({
     )
 }
 
+/** Gap between cursor and tooltip box, mirrored on flip. */
+const TOOLTIP_OFFSET_PX = 12
+
 /**
- * Floating label anchored just above-right of the cursor. Pure presentation —
- * the WorldMap drives content and position via {@link WorldMapView}'s state.
- * The CSS class lives in App.css alongside the rest of the game styling.
+ * Floating label anchored next to the cursor. Pure presentation — the WorldMap
+ * drives content and position via {@link WorldMapView}'s state. The CSS class
+ * lives in App.css alongside the rest of the game styling.
+ *
+ * <p>Position is clamped to the {@code .world-map} container: when the default
+ * below-right anchor would overflow the container's right/bottom edge, the
+ * tooltip flips to the opposite side of the cursor. Width and height are
+ * measured at render time with {@code useLayoutEffect}, so the clamped style
+ * lands before the browser paints — no visible flicker.
  */
 function Tooltip({ info }: { info: NonNullable<HoverInfo> }) {
+    const ref = useRef<HTMLDivElement | null>(null)
+    // Initial render is hidden: we don't know the tooltip's measured size yet,
+    // so any unclamped position could flash off-screen. The layout effect
+    // below measures and reveals before paint.
+    const [style, setStyle] = useState<CSSProperties>({
+        left: info.screenX + TOOLTIP_OFFSET_PX,
+        top: info.screenY + TOOLTIP_OFFSET_PX,
+        visibility: 'hidden',
+    })
+
+    useLayoutEffect(() => {
+        const el = ref.current
+        const parent = el?.parentElement
+        if (!el || !parent) return
+        const rect = el.getBoundingClientRect()
+        const wouldOverflowRight =
+            info.screenX + TOOLTIP_OFFSET_PX + rect.width > parent.clientWidth
+        const wouldOverflowBottom =
+            info.screenY + TOOLTIP_OFFSET_PX + rect.height > parent.clientHeight
+        setStyle({
+            left: wouldOverflowRight
+                ? info.screenX - rect.width - TOOLTIP_OFFSET_PX
+                : info.screenX + TOOLTIP_OFFSET_PX,
+            top: wouldOverflowBottom
+                ? info.screenY - rect.height - TOOLTIP_OFFSET_PX
+                : info.screenY + TOOLTIP_OFFSET_PX,
+            visibility: 'visible',
+        })
+    }, [info])
+
     const label =
         info.kind === 'ship' ? (
             <>
                 <span className="world-map__tooltip-name">{info.ship.name}</span>
-                {info.ship.isOwn && (
-                    <span className="world-map__tooltip-tag">yours</span>
-                )}
+                {info.ship.isOwn && <span className="world-map__tooltip-tag">yours</span>}
             </>
         ) : (
             <span className="world-map__tooltip-name">{info.planet.name}</span>
         )
 
     return (
-        <div
-            className="world-map__tooltip"
-            style={{ left: `${info.screenX + 12}px`, top: `${info.screenY + 12}px` }}
-            role="tooltip"
-        >
+        <div ref={ref} className="world-map__tooltip" style={style} role="tooltip">
             {label}
         </div>
     )
