@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
 import { createShip } from '../../api/ship'
-import { useSelectedShip } from '../../ship/SelectedShipContext'
+import { useSelection } from '../../selection/SelectionContext'
 import type { ShipDto } from '../../types/api'
 
 type ShipListProps = {
@@ -17,7 +17,7 @@ type ShipListProps = {
  * the list, and auto-selects the new ship.
  */
 export function ShipList({ ships, isLoading }: ShipListProps) {
-    const { selectedShipId, setSelectedShipId } = useSelectedShip()
+    const { selectedShipId, setSelection } = useSelection()
     const queryClient = useQueryClient()
 
     const create = useMutation({
@@ -28,7 +28,7 @@ export function ShipList({ ships, isLoading }: ShipListProps) {
             queryClient.setQueryData<ShipDto[]>(['ships'], (current) =>
                 current ? [...current, newShip] : [newShip]
             )
-            setSelectedShipId(newShip.id)
+            setSelection({ kind: 'ship', id: newShip.id })
         },
     })
 
@@ -64,7 +64,7 @@ export function ShipList({ ships, isLoading }: ShipListProps) {
                                             ? 'ship-list__item ship-list__item--selected'
                                             : 'ship-list__item'
                                     }
-                                    onClick={() => setSelectedShipId(ship.id)}
+                                    onClick={() => setSelection({ kind: 'ship', id: ship.id })}
                                 >
                                     <span className="ship-list__name">{ship.name}</span>
                                     <span className="ship-list__pos">

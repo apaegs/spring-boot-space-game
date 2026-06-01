@@ -4,7 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { Game } from './pages/Game'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
-import { SelectedShipProvider } from './ship/SelectedShipProvider'
+import { SelectionProvider } from './selection/SelectionProvider'
 import './App.css'
 
 function App() {
@@ -18,12 +18,12 @@ function App() {
                     <Route
                         path="/"
                         element={
-                            // SelectedShipProvider sits inside the protected route so it
+                            // SelectionProvider sits inside the protected route so it
                             // only mounts after we know there's a user, and its initial
                             // /api/ships fetch authenticates correctly.
-                            <SelectedShipProvider>
+                            <SelectionProvider>
                                 <Game />
-                            </SelectedShipProvider>
+                            </SelectionProvider>
                         }
                     />
                 </Route>

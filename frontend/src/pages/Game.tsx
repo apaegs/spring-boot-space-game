@@ -9,7 +9,7 @@ import { GameHeader } from '../components/game/GameHeader'
 import { SelectedShipPanel } from '../components/game/SelectedShipPanel'
 import { ShipList } from '../components/game/ShipList'
 import { WorldMapView } from '../components/WorldMapView'
-import { useSelectedShip } from '../ship/SelectedShipContext'
+import { useSelection } from '../selection/SelectionContext'
 
 const POLL_MS = 5000
 
@@ -32,7 +32,7 @@ type ActionMode = { type: 'idle' } | { type: 'targetingMove'; shipId: string }
 
 export function Game() {
     const queryClient = useQueryClient()
-    const { selectedShipId } = useSelectedShip()
+    const { selectedShipId } = useSelection()
     const [actionMode, setActionMode] = useState<ActionMode>({ type: 'idle' })
 
     const shipsQuery = useQuery({
