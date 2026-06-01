@@ -20,7 +20,7 @@ User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
                      ▼ can LAND on
                   Planet (pre-seeded)
 
-WorldState (singleton)              # current_tick, last_tick_at, grid_width, grid_height
+WorldState (singleton)              # current_tick, last_tick_at
 ```
 
 ## Entities
@@ -46,8 +46,8 @@ A player-controlled vessel. **A User can have any number of Ships** (the auto-cr
 | id              | UUID         | PK                                                      |
 | user_id         | UUID         | FK → user.id (not unique — many ships per user)         |
 | name            | VARCHAR(64)  | player-chosen or generated                              |
-| x               | INT          | 0 ≤ x < grid_width                                      |
-| y               | INT          | 0 ≤ y < grid_height                                     |
+| x               | INT          | 0 ≤ x < 100 (see `WorldConstants.GRID_SIZE`)            |
+| y               | INT          | 0 ≤ y < 100 (see `WorldConstants.GRID_SIZE`)            |
 | created_at      | TIMESTAMPTZ  | default `now()`                                         |
 
 **Ownership**: every ship-scoped *action* endpoint (`GET /api/ships/{id}/...`, `POST /api/ships/{id}/orders`, etc.) checks that the `{shipId}` belongs to the caller via `ShipService.requireOwnedShip`. A non-owned ship ID 404s — deliberately indistinguishable from "ship doesn't exist" so the API doesn't leak other users' ship IDs through the action surface.
@@ -109,8 +109,8 @@ Singleton table. Only ever one row.
 | id             | SMALLINT     | PK, CHECK (id = 1)                       |
 | current_tick   | BIGINT       | increments by 1 per tick                 |
 | last_tick_at   | TIMESTAMPTZ  | most recently processed tick             |
-| grid_width     | INT          | default 100                              |
-| grid_height    | INT          | default 100                              |
+
+**Grid size**: fixed at 100×100 forever in v1 — the single source of truth is `WorldConstants.GRID_SIZE` (see issue #29). The CHECK constraints on `ships(x,y)` and `planets(x,y)` use the same literal at the schema layer. Per-instance grid sizing would require moving the value back onto `world_state` and replacing the CHECK constraints with triggers; not planned.
 
 **Tick interval**: configured via `game.tick.interval-ms` in `application.properties`. v1 value is `3000` (3 s) — the same number for every deployment and every player, since tick pace is a game-design choice, not a per-environment tuning knob.
 

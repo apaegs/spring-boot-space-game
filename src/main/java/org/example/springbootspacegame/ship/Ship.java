@@ -64,9 +64,10 @@ public class Ship {
     }
 
     /**
-     * Set a new position. The DB enforces 0 ≤ x,y < 100 via CHECK constraints —
-     * passing out-of-range values throws at flush time. Used by MoveOrderHandler
-     * inside the tick processor's transaction.
+     * Set a new position. Callers must keep {@code (x, y)} inside the grid
+     * (see {@code WorldConstants.GRID_SIZE}); the DB CHECK constraints back this
+     * up and will throw at flush time on out-of-range values. Used by
+     * MoveOrderHandler inside the tick processor's transaction.
      */
     public void moveTo(int x, int y) {
         this.x = x;

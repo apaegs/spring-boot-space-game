@@ -34,10 +34,4 @@ public class WorldState {
 
     @Column(name = "last_tick_at", nullable = false)
     private OffsetDateTime lastTickAt;
-
-    @Column(name = "grid_width", nullable = false)
-    private int gridWidth;
-
-    @Column(name = "grid_height", nullable = false)
-    private int gridHeight;
 }
