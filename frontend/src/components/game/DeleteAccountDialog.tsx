@@ -42,7 +42,11 @@ export function DeleteAccountDialog({
         }
     }, [open])
 
-    const canDelete = typed === username && !submitting
+    // username.length > 0 closes a defense-in-depth gap: if a caller ever
+    // mounted the dialog with an empty string (e.g. during the brief gap
+    // between session expiry and the auth redirect) the empty input would
+    // match `typed === username` and bypass the type-back confirmation.
+    const canDelete = username.length > 0 && typed === username && !submitting
 
     const submit = async () => {
         if (!canDelete) return

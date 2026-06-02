@@ -1,6 +1,12 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text, TextStyle } from 'pixi.js'
 import type { PlanetDto } from '../types/api'
-import { clamp, tileToPx as pureTileToPx } from './WorldMap.helpers'
+import {
+    CANVAS_PX as HELPER_CANVAS_PX,
+    GRID_CELLS as HELPER_GRID_CELLS,
+    TILE_PX as HELPER_TILE_PX,
+    clamp,
+    tileToPx as pureTileToPx,
+} from './WorldMap.helpers'
 
 /**
  * Map-level view model for any ship — own or foreign. The React layer projects
@@ -66,9 +72,12 @@ export type HoverInfo =
  * </ul>
  */
 export class WorldMap {
-    private static readonly CANVAS_PX = 600
-    private static readonly GRID_CELLS = 100
-    private static readonly TILE_PX = 6 // base size at zoom 1.0; world = 600px
+    // Sourced from WorldMap.helpers so the `CANVAS_PX === GRID_CELLS * TILE_PX`
+    // invariant test in WorldMap.helpers.test.ts actually protects this class's
+    // geometry — defining them locally would let the two copies drift silently.
+    private static readonly CANVAS_PX = HELPER_CANVAS_PX
+    private static readonly GRID_CELLS = HELPER_GRID_CELLS
+    private static readonly TILE_PX = HELPER_TILE_PX // base size at zoom 1.0; world = 600px
 
     /**
      * Hard cap for any visible marker's half-extent so nothing renders larger

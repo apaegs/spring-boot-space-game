@@ -110,11 +110,12 @@ public class AuthService {
                 || !(auth.getPrincipal() instanceof AuthenticatedUser principal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        // deleteById is a no-op on missing rows by default, but our session
-        // says the user exists; if it doesn't, something is badly out of sync
-        // and 404 is more honest than a silent 204.
+        // The request is already authenticated; if the backing users row is
+        // gone, the session identity has gone stale. Surface 401 to match
+        // getCurrentUser() above — the frontend's session-cleanup + redirect
+        // flow is keyed off 401, not 404.
         if (!userRepository.existsById(principal.getUserId())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
         userRepository.deleteById(principal.getUserId());
     }
