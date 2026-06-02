@@ -12,8 +12,15 @@ FROM eclipse-temurin:25-jdk AS builder
 
 WORKDIR /build
 
-# Copy the Maven wrapper + pom first so the dependency-resolution layer
-# can be cached when only source changes.
+# Dependency-warmup layer.
+#
+# Docker caches each instruction's output by hashing the inputs. Copying
+# the pom + wrapper alone and running dependency:go-offline before any
+# source is copied means this slow step (hundreds of MB of Maven Central
+# downloads on a cold build) gets cached as a layer keyed on the pom.
+# Subsequent builds that only change Java/TS sources skip straight past
+# it. Without this split, every source edit would re-trigger the full
+# dependency download — the single longest step in the build.
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
