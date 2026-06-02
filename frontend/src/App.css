@@ -568,6 +568,49 @@
     color: #fff;
 }
 
+/* Skeleton placeholder rows for the orders list while the first fetch is in
+   flight. Mirrors `.order-row` dimensions so the panel doesn't reflow when
+   the real rows land. */
+.order-row--skeleton {
+    background: #18182f;
+}
+
+.order-skeleton {
+    display: inline-block;
+    height: 0.75rem;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #23234a 0%, #2e2e57 50%, #23234a 100%);
+    background-size: 200% 100%;
+    animation: orders-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.order-skeleton--kind {
+    width: 3rem;
+}
+
+.order-skeleton--status {
+    width: 4rem;
+}
+
+.order-skeleton--params {
+    width: 100%;
+}
+
+@keyframes orders-skeleton-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .order-skeleton {
+        animation: none;
+    }
+}
+
 .add-order__btn {
     font: inherit;
     padding: 0.5rem;

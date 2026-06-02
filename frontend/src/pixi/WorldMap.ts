@@ -1,5 +1,6 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text, TextStyle } from 'pixi.js'
 import type { PlanetDto } from '../types/api'
+import { clamp, tileToPx as pureTileToPx } from './WorldMap.helpers'
 
 /**
  * Map-level view model for any ship — own or foreign. The React layer projects
@@ -662,13 +663,6 @@ export class WorldMap {
 
     private static tileToPx(x: number, y: number): { px: number; py: number } {
         // Tile centers — +0.5 puts the marker in the middle of its cell.
-        return {
-            px: (x + 0.5) * WorldMap.TILE_PX,
-            py: (y + 0.5) * WorldMap.TILE_PX,
-        }
+        return pureTileToPx(x, y, WorldMap.TILE_PX)
     }
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value))
 }
