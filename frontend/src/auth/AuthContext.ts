@@ -7,6 +7,12 @@ export type AuthState = {
     login: (body: LoginRequest) => Promise<void>
     register: (body: RegisterRequest) => Promise<void>
     logout: () => Promise<void>
+    /**
+     * Hard-delete the currently authenticated user. On success the backend has
+     * already invalidated the session, so callers should redirect to /login
+     * immediately afterwards.
+     */
+    deleteAccount: () => Promise<void>
 }
 
 // Lives in a .ts (no JSX) file so Fast Refresh doesn't complain about mixing

@@ -23,3 +23,13 @@ export function register(body: RegisterRequest): Promise<MeResponse> {
 export function logout(): Promise<void> {
     return api.post<void>('/api/auth/logout')
 }
+
+/**
+ * Hard-delete the currently authenticated user. Backend cascades through
+ * ships and ship_orders; the session is invalidated server-side, so the
+ * SPA must follow up with a redirect to /login (the next /me would 401
+ * anyway). Returns 204 No Content.
+ */
+export function deleteAccount(): Promise<void> {
+    return api.delete<void>('/api/auth/me')
+}

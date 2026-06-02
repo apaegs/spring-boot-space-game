@@ -138,6 +138,110 @@
     color: #fff;
 }
 
+.game-header__actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.game-header__delete {
+    font: inherit;
+    padding: 0.4rem 0.8rem;
+    background: transparent;
+    color: #d18888;
+    border: 1px solid #5a2a2a;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.game-header__delete:hover {
+    border-color: #8a3a3a;
+    color: #ffaaaa;
+}
+
+/* ----- confirm dialog (delete account) ----- */
+
+.confirm-dialog {
+    background: #14142a;
+    color: #e0e0f0;
+    border: 1px solid #2a2a45;
+    border-radius: 6px;
+    padding: 1.5rem;
+    max-width: 28rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.confirm-dialog h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.2rem;
+}
+
+.confirm-dialog p {
+    margin: 0 0 0.75rem;
+    color: #cccce8;
+    line-height: 1.4;
+}
+
+.confirm-dialog__input {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    padding: 0.5rem 0.6rem;
+    background: #0a0a1a;
+    color: #e0e0f0;
+    border: 1px solid #2a2a45;
+    border-radius: 4px;
+    margin: 0.25rem 0 1rem;
+}
+
+.confirm-dialog__input:focus {
+    outline: none;
+    border-color: #4a4a75;
+}
+
+.confirm-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.confirm-dialog__actions button {
+    font: inherit;
+    padding: 0.4rem 0.9rem;
+    background: transparent;
+    color: #aaaacc;
+    border: 1px solid #2a2a45;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.confirm-dialog__actions button:not(:disabled):hover {
+    border-color: #4a4a75;
+    color: #fff;
+}
+
+.confirm-dialog__danger {
+    background: #4a1f1f !important;
+    color: #ffdddd !important;
+    border-color: #6a2929 !important;
+}
+
+.confirm-dialog__danger:not(:disabled):hover {
+    background: #6a2929 !important;
+    border-color: #8a3a3a !important;
+}
+
+.confirm-dialog__danger:disabled {
+    background: transparent !important;
+    color: #555577 !important;
+    border-color: #2a2a45 !important;
+    cursor: not-allowed;
+}
+
 /* ----- main view ----- */
 
 .game__main {

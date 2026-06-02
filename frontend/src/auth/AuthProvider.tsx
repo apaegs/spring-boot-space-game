@@ -1,5 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { getMe, login as apiLogin, logout as apiLogout, register as apiRegister } from '../api/auth'
+import {
+    deleteAccount as apiDeleteAccount,
+    getMe,
+    login as apiLogin,
+    logout as apiLogout,
+    register as apiRegister,
+} from '../api/auth'
 import type { LoginRequest, MeResponse, RegisterRequest } from '../types/api'
 import { AuthContext } from './AuthContext'
 
@@ -39,8 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
     }
 
+    const deleteAccount = async () => {
+        await apiDeleteAccount()
+        // Backend invalidated the session; mirror that locally so the next
+        // route guard sees a logged-out state without round-tripping /me.
+        setUser(null)
+    }
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout }}>
+        <AuthContext.Provider value={{ user, login, register, logout, deleteAccount }}>
             {children}
         </AuthContext.Provider>
     )
