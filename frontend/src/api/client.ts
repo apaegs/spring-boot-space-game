@@ -12,13 +12,35 @@
  * on this so error handling is uniform across the SPA.
  */
 
+/**
+ * Stable shape the backend returns for any non-2xx response. Mirrors
+ * `org.example.springbootspacegame.errors.ApiErrorResponse` — see that
+ * class for which fields appear when.
+ *
+ * - `status`: HTTP status as a number (always present from the server,
+ *   but {@link ApiError} also sets it from {@code res.status} when the
+ *   body is unparseable, so callers can rely on it being set).
+ * - `message`: human-readable summary.
+ * - `details`: present on 400 validation errors as `{ field: message }`.
+ * - `errorId`: present on 500 catch-all responses; opaque UUID a player
+ *   can quote so we can grep the server logs straight to their request.
+ */
 export class ApiError extends Error {
     readonly status: number
+    readonly details: Record<string, string> | null
+    readonly errorId: string | null
 
-    constructor(status: number, message: string) {
+    constructor(
+        status: number,
+        message: string,
+        details: Record<string, string> | null = null,
+        errorId: string | null = null
+    ) {
         super(message)
         this.name = 'ApiError'
         this.status = status
+        this.details = details
+        this.errorId = errorId
     }
 }
 
@@ -76,15 +98,25 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     }
 
     if (!res.ok) {
-        // Try to extract a server-supplied message; fall back to status text.
+        // Server's stable shape: { status, message, details?, errorId? }.
+        // Fall back to statusText when the body is missing or not JSON
+        // (rare — only filter-rejected requests before our handlers run).
         let message = res.statusText
+        let details: Record<string, string> | null = null
+        let errorId: string | null = null
         try {
-            const errBody = (await res.json()) as { message?: string; error?: string }
-            message = errBody.message ?? errBody.error ?? message
+            const errBody = (await res.json()) as {
+                message?: string
+                details?: Record<string, string>
+                errorId?: string
+            }
+            message = errBody.message ?? message
+            details = errBody.details ?? null
+            errorId = errBody.errorId ?? null
         } catch {
             // Body wasn't JSON; use status text as-is.
         }
-        throw new ApiError(res.status, message)
+        throw new ApiError(res.status, message, details, errorId)
     }
 
     return (await res.json()) as T

@@ -87,6 +87,16 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- JSON-encoded log output for the prod profile. The {@code prod}
+             profile in logback-spring.xml swaps the dev pattern layout for
+             this encoder, emitting one JSON event per line that a log
+             shipper (Loki / CloudWatch / Datadog / etc.) can index by field
+             without needing a parser ruleset. -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>8.0</version>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
