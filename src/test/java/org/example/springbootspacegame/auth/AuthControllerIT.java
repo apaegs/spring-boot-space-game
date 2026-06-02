@@ -69,7 +69,7 @@ class AuthControllerIT {
         MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
 
         // /me with session → 200
-        mockMvc.perform(get("/api/auth/me").session(session))
+        mockMvc.perform(get("/api/auth/me").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value(username));
 
