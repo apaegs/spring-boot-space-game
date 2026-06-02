@@ -1,0 +1,43 @@
+# Production / staging compose. Mirror of compose.yaml (dev) but with the
+# app container added and Postgres no longer bound to localhost only — the
+# app reaches it over the compose network.
+#
+# Quickstart:
+#   1. Copy .env.example to .env and fill in POSTGRES_DB/USER/PASSWORD.
+#   2. docker compose -f docker-compose.prod.yaml up --build -d
+#   3. App at http://localhost:8080.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # No host port published on purpose — only the app talks to Postgres.
+    # If you need to psql from the host, add `ports: ["127.0.0.1:5432:5432"]`
+    # here temporarily; never publish to 0.0.0.0 in prod.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:

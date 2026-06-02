@@ -28,7 +28,10 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: ./mvnw -B verify
+        # -Dskip.frontend.build=true: the separate `frontend` job below
+        # runs lint + build on the SPA. Doing it again here would just
+        # add ~30s of duplicate pnpm work to the Java pipeline.
+        run: ./mvnw -B verify -Dskip.frontend.build=true
 
   frontend:
     runs-on: ubuntu-latest

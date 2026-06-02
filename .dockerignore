@@ -1,0 +1,45 @@
+# Keep the Docker build context lean — without this, every file in the
+# repo gets sent to the daemon (slow + leaks dev artifacts into the image).
+#
+# What's deliberately copied into the image is in Dockerfile's COPY lines:
+# .mvn/, mvnw, pom.xml, src/, frontend/. Everything else is excluded here.
+
+# VCS
+.git
+.github
+.gitignore
+.gitattributes
+
+# Build outputs (re-built inside the container)
+target/
+frontend/node_modules/
+frontend/dist/
+
+# IDE / editor
+.idea
+.vscode
+*.iml
+*.iws
+*.ipr
+
+# Local secrets (the image gets env vars at runtime, not baked in)
+.env
+.env.local
+.env.*.local
+
+# Docs / metadata not needed at runtime
+README.md
+DOMAIN.md
+CLAUDE.md
+CLAUDE.local.md
+HELP.md
+
+# Compose files — we don't build the image from inside another container
+compose.yaml
+docker-compose.prod.yaml
+Dockerfile
+.dockerignore
+
+# Misc
+**/*.log
+**/.DS_Store

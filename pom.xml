@@ -28,6 +28,21 @@
     </scm>
     <properties>
         <java.version>25</java.version>
+
+        <!-- Frontend build. Versions are mirrored from .github/workflows/ci.yml
+             (node) and frontend/package.json packageManager (pnpm) so the
+             Maven-driven build matches what CI installs explicitly. Bump in
+             lockstep when either of those moves. -->
+        <node.version>v24.0.0</node.version>
+        <pnpm.version>11.4.0</pnpm.version>
+        <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+
+        <!-- Skip the frontend build (pnpm install + Vite build + dist copy).
+             Default false so `./mvnw package` produces a complete jar with
+             the SPA baked in. CI sets this to true on the Java job — the
+             separate frontend job already runs lint+build, so we skip it
+             here to avoid doubling the work. -->
+        <skip.frontend.build>false</skip.frontend.build>
     </properties>
     <dependencies>
         <dependency>
@@ -111,6 +126,74 @@
 
     <build>
         <plugins>
+            <!-- Build the React/Vite SPA and bake it into the jar.
+                 Bound to {@code prepare-package} so plain {@code mvn test}
+                 / {@code mvn compile} don't pay for it; only goals that go
+                 all the way to {@code package} (or beyond, like {@code verify}
+                 and {@code install}) trigger pnpm. The plugin downloads its
+                 own Node + pnpm into target/, so no system-level Node is
+                 required to build a deployable jar. -->
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>${frontend-maven-plugin.version}</version>
+                <configuration>
+                    <workingDirectory>frontend</workingDirectory>
+                    <installDirectory>${project.build.directory}/frontend-tooling</installDirectory>
+                    <nodeVersion>${node.version}</nodeVersion>
+                    <pnpmVersion>${pnpm.version}</pnpmVersion>
+                    <skip>${skip.frontend.build}</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-pnpm</id>
+                        <goals><goal>install-node-and-pnpm</goal></goals>
+                        <phase>prepare-package</phase>
+                    </execution>
+                    <execution>
+                        <id>pnpm-install</id>
+                        <goals><goal>pnpm</goal></goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <arguments>install --frozen-lockfile</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>pnpm-build</id>
+                        <goals><goal>pnpm</goal></goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Copy the Vite build output into the jar's static/ so Spring
+                 serves the SPA from the same artifact as the API. Same phase
+                 as the frontend build above; declaration order in this POM
+                 guarantees this runs after the pnpm executions. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-frontend-dist</id>
+                        <phase>prepare-package</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <skip>${skip.frontend.build}</skip>
+                            <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>frontend/dist</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>

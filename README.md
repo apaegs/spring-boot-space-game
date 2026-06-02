@@ -88,6 +88,46 @@ docker compose down -v
 Flyway re-runs all migrations on the empty volume — local data is lost,
 which is fine for dev.
 
+## Deploy
+
+The repo ships a multi-stage `Dockerfile` and a `docker-compose.prod.yaml` so a single command brings up Postgres + the app on any host with Docker installed.
+
+```sh
+# 1. Make sure .env exists with POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD.
+cp .env.example .env  # then edit and set real values
+
+# 2. Build the image and start the stack
+docker compose -f docker-compose.prod.yaml up --build -d
+
+# App on http://localhost:8080 once Postgres has passed its healthcheck.
+```
+
+What happens inside the build:
+
+- The `Dockerfile`'s builder stage runs `./mvnw package`, which triggers `frontend-maven-plugin` to install pnpm + Node into `target/`, run `pnpm install --frozen-lockfile`, run `pnpm build`, and copy `frontend/dist/` into the jar's `BOOT-INF/classes/static/`. The single jar contains both API and SPA.
+- The runtime stage is a slim Temurin JRE image, runs as a non-root `spring` user, and sets `SPRING_DOCKER_COMPOSE_ENABLED=false` (the dev autodetect is dev-only).
+- `docker-compose.prod.yaml` injects `SPRING_DATASOURCE_*` env vars so the app talks to the Postgres service over the compose network.
+
+### Building the jar without Docker
+
+```sh
+./mvnw clean package
+# target/spring-boot-space-game-0.0.1-SNAPSHOT.jar contains everything
+java -jar target/spring-boot-space-game-*.jar
+```
+
+This works for any host with a JDK 25 runtime — Docker isn't required for the jar, only for the bundled-Postgres convenience.
+
+### Skipping the frontend build (CI)
+
+CI's Java job runs `./mvnw verify` against a workspace that has no need for the SPA bundle (the separate frontend job covers lint + build). Pass `-Dskip.frontend.build=true` to skip the pnpm install + Vite build during Maven:
+
+```sh
+./mvnw verify -Dskip.frontend.build=true
+```
+
+The flag is off by default so a plain `./mvnw package` still produces a deployable jar.
+
 ## Workflow
 
 We run a strict PR flow — **no direct pushes to `main`**.
@@ -110,11 +150,14 @@ More detail on conventions in [CLAUDE.md](CLAUDE.md).
 ├── src/main/resources/
 │   ├── application.properties                       # Configuration
 │   ├── db/migration/                                # Flyway SQL migrations (V1__...)
-│   └── static/                                      # (frontend build lands here later)
+│   └── static/                                      # SPA bundle (populated at package time)
 ├── src/test/java/                                   # Tests
-├── compose.yaml                                     # Local Postgres
+├── frontend/                                        # React + Vite SPA, PixiJS for the 2D map
+├── compose.yaml                                     # Dev Postgres (autostarted by Spring)
+├── docker-compose.prod.yaml                         # Prod stack: app + Postgres
+├── Dockerfile                                       # Multi-stage build (frontend + backend → jar)
 ├── pom.xml
 └── .github/workflows/ci.yml                         # CI
 ```
 
-The frontend lives in `frontend/` (React + Vite, scaffolded in [issue #4](../../issues)). 2D rendering is done via PixiJS in a `<canvas>` inside the React app; plain DOM React for menus, dashboards and forms.
+The frontend uses PixiJS in a `<canvas>` for the 2D map; plain DOM React for menus, dashboards and forms.
