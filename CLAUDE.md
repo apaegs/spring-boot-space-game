@@ -87,9 +87,10 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 
 ### PRs
 - A template (`.github/pull_request_template.md`) pre-fills Summary / Why / Test plan when you open a PR — use it, don't delete sections.
-- Link the issue: `Closes #N`
-- Description should say *why*, not just *what* (the diff shows what)
-- **Keep them focused.** Small (< ~400 lines) is the default and almost always right. Bigger is fine when the change is genuinely cohesive (e.g. introducing a new subsystem end-to-end), but be honest with yourself — "I'll save a round trip" isn't a good reason to bundle unrelated work. When in doubt, split.
+- Link the issue: `Closes #N` (or `Closes #A, closes #B` when the PR resolves several — each needs its own `closes` keyword).
+- Description should say *why*, not just *what* (the diff shows what).
+- **Prefer bigger, cohesive PRs over many small ones.** This is a single-developer workflow with a real per-PR overhead (CodeRabbit rate-limits + credit usage, manual review loop, branch churn). A focused PR that closes 2–3 related issues with the same theme — same subsystem, same code paths, same test surface, doc updates piggybacked — is the default. Soft ceiling around 600–800 lines; over that, even a cohesive narrative is hard to review.
+- A bundle is **not** right when themes diverge (frontend animation + backend index migration) or when a tiny fix gets dragged along by a substantial feature just because both happen to be open. State the bundling decision explicitly in the PR body ("Bundled because they share …").
 - One review required. CI must be green.
 - Squash and merge.
 
@@ -105,6 +106,13 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 - **Exempt endpoints.** `/api/auth/register` and `/api/auth/login` are CSRF-exempt (`ignoringRequestMatchers`). They're unauthenticated by design — there's no session for an attacker to ride, so the protection is moot, and requiring a token would force a "fetch token first" round-trip into login. GET endpoints are exempt by HTTP method (Spring's default).
 - **Frontend.** `frontend/src/api/client.ts` reads `XSRF-TOKEN` and sets `X-XSRF-TOKEN` automatically — endpoint modules don't have to think about it.
 - **Tests.** Integration tests that POST/PUT/PATCH/DELETE must chain `.with(csrf())` on the MockMvc builder (import from `SecurityMockMvcRequestPostProcessors`). The convention in this repo is to add it on every `.session(...)` call so the test reads like a real authenticated client (it's a no-op on GETs). Register/login calls don't need it — they're exempt.
+
+## Observability
+
+- **Error responses follow a stable JSON shape.** Every non-2xx response from the API matches `ApiErrorResponse`: `{ "status": <int>, "message": <string>, "details"?: { field: msg }, "errorId"?: <uuid> }`. The frontend's `ApiError` in `frontend/src/api/client.ts` is the source of truth on the client side and binds to this shape. `details` appears only on validation 400s; `errorId` only on internal 500s (so a player can quote it in a bug report and we grep the logs straight to their request).
+- **All exception → response mapping lives in `errors/GlobalExceptionHandler`** (`@RestControllerAdvice`). For paths that fail inside the Spring Security filter chain (unauthenticated, CSRF rejected), `errors/JsonSecurityErrorHandlers` writes the same JSON shape via custom `AuthenticationEntryPoint` and `AccessDeniedHandler`. Don't write per-controller try/catch for error shaping — surface the failure as a `ResponseStatusException` (or a more specific exception that the handler covers) and let the advice do its job.
+- **Logging is profile-aware.** `src/main/resources/logback-spring.xml` switches encoders by Spring profile: the default profile emits human-readable colored console output (unchanged dev feel); the `prod` profile (`SPRING_PROFILES_ACTIVE=prod`) emits one JSON event per line via `logstash-logback-encoder` with `@timestamp`, `level`, `logger_name`, `thread_name`, `message`, `mdc`, and `stack_trace` on errors. A log shipper (Loki / CloudWatch / etc.) can index the prod stream by field without a parser ruleset.
+- **MDC and request-id correlation.** `observability/MdcFilter` (wired into the Spring Security chain right after `SecurityContextHolderFilter`) populates the MDC with `requestId` (UUID, per request) and `userId` (the authenticated user's UUID, or `"anonymous"`). The same UUID goes out as the `X-Request-Id` response header on every response — including 401/403, so a player can quote it from any failure. Don't `MDC.put()` these manually; the filter handles it. Adding new MDC keys is fine, but clear them in `finally` to avoid thread-pool leakage.
 
 ## Secrets and environment variables
 
