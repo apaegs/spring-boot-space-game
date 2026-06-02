@@ -30,7 +30,7 @@ cp .env.example .env
 ./mvnw spring-boot:run
 
 # 4. Run tests (uses Testcontainers, ignores .env / compose.yaml)
-./mvnw verify
+./mvnw verify -Dskip.frontend.build=true   # skip the SPA build for a faster test loop
 ```
 
 The app listens on http://localhost:8080.

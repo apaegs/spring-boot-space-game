@@ -10,6 +10,10 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # Restart on any exit short of an explicit `docker compose down`. Keeps
+    # the stack alive across host reboots and the occasional crash without
+    # masking a permanent failure (after enough retries Docker gives up).
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -29,6 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy

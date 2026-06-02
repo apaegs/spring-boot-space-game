@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# Workflow-level least-privilege. Both jobs only build and test — neither
+# needs to write back to the repo, push tags, or update releases — so the
+# default GITHUB_TOKEN scope (which may include write on contents/PRs
+# depending on repo settings) is more than necessary. Bump per-job if a
+# job later needs more.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
