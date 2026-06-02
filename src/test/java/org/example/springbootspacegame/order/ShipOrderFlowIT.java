@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.example.springbootspacegame.MockMvcHelper.registerAndLogin;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -78,7 +79,7 @@ class ShipOrderFlowIT {
         assertShipAt(session, shipId, 52, 53);
 
         // After completion, the order leaves the visible queue.
-        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session))
+        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
@@ -125,7 +126,7 @@ class ShipOrderFlowIT {
         UUID shipId = firstShipIdFor(session);
 
         // Missing y
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 10 } }
@@ -133,7 +134,7 @@ class ShipOrderFlowIT {
                 .andExpect(status().isBadRequest());
 
         // Out of range
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 999, "y": 999 } }
@@ -150,10 +151,10 @@ class ShipOrderFlowIT {
         UUID second = postOrder(session, shipId, "LAND", Map.of());                // still PENDING
 
         // Cancel the pending LAND before any tick fires.
-        mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", shipId, second).session(session))
+        mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", shipId, second).session(session).with(csrf()))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session))
+        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").value(first.toString()));
@@ -195,10 +196,10 @@ class ShipOrderFlowIT {
         UUID aliceShipId = firstShipIdFor(alice);
         UUID aliceOrderId = postOrder(alice, aliceShipId, "MOVE", Map.of("x", 70, "y", 70));
 
-        mockMvc.perform(get("/api/ships/{shipId}/orders", aliceShipId).session(bob))
+        mockMvc.perform(get("/api/ships/{shipId}/orders", aliceShipId).session(bob).with(csrf()))
                 .andExpect(status().isNotFound());
 
-        mockMvc.perform(post("/api/ships/{shipId}/orders", aliceShipId).session(bob)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", aliceShipId).session(bob).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "kind": "MOVE", "params": { "x": 70, "y": 70 } }
@@ -208,14 +209,14 @@ class ShipOrderFlowIT {
         // Cancel path too — ownership-404 should be uniform across verbs so
         // Bob can't probe the existence of Alice's specific order id.
         mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", aliceShipId, aliceOrderId)
-                        .session(bob))
+                        .session(bob).with(csrf()))
                 .andExpect(status().isNotFound());
     }
 
     // --- helpers ---
 
     private UUID firstShipIdFor(MockHttpSession session) throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andReturn();
         return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
@@ -225,7 +226,7 @@ class ShipOrderFlowIT {
     private UUID postOrder(MockHttpSession session, UUID shipId, String kind, Map<String, Object> params)
             throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("kind", kind, "params", params));
-        MvcResult result = mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        MvcResult result = mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
@@ -237,7 +238,7 @@ class ShipOrderFlowIT {
     private void assertShipAt(MockHttpSession session, UUID shipId, int x, int y) throws Exception {
         // GET /api/ships returns a list; we look up by ID so multi-ship tests
         // remain robust to other ships moving in parallel.
-        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());

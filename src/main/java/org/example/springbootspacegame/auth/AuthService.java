@@ -11,6 +11,29 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Business logic for the auth flow — counterpart to the thin
+ * {@link AuthController} transport layer.
+ *
+ * <p>{@link #register} guarantees the "every user has at least one ship"
+ * invariant by creating the starting mothership in the same transaction
+ * as the user row. A failure in ship creation rolls back the user insert,
+ * so a half-registered "user without ship" row can never be observed by
+ * another request.
+ *
+ * <p>The conflict-handling in {@code register} is layered on purpose:
+ * the pre-checks {@code existsByUsernameIgnoreCase} / {@code existsByEmailIgnoreCase}
+ * produce a clean 409 in the common case, and the DB unique index plus
+ * the {@code saveAndFlush}/{@link DataIntegrityViolationException} remap
+ * catches the concurrent-insert race where two requests both pass the
+ * pre-checks. Either path returns the same 409, so the client doesn't
+ * have to distinguish.
+ *
+ * <p>{@link #getCurrentUser} is read-only and resolves the principal
+ * out of the {@code SecurityContext} populated by the login flow's
+ * {@code SecurityContextRepository.saveContext} call — it does not
+ * re-authenticate.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {

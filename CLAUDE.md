@@ -98,6 +98,14 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 - `.github/ISSUE_TEMPLATE/` has two templates: **Bug** (what happened, expected, repro) and **Feature** (Goal / Scope / Acceptance — same structure the earlier issues used, just translated).
 - Pick the matching template when filing. Blank issues still work but the template is the default path.
 
+## Auth and CSRF
+
+- **Session-based auth.** A successful `POST /api/auth/login` returns 204 and sets `JSESSIONID`. Every subsequent request rides that cookie. `POST /api/auth/logout` invalidates it. No JWTs — we deliberately stayed stateful for v1 simplicity.
+- **CSRF protection is on.** Spring Security's SPA pattern: server writes a non-HttpOnly `XSRF-TOKEN` cookie; the frontend reads it and echoes the value as the `X-XSRF-TOKEN` header on every state-changing request (POST/PUT/PATCH/DELETE). The cookie is force-issued on every response via a small `CsrfCookieFilter` so the SPA always has a token to send.
+- **Exempt endpoints.** `/api/auth/register` and `/api/auth/login` are CSRF-exempt (`ignoringRequestMatchers`). They're unauthenticated by design — there's no session for an attacker to ride, so the protection is moot, and requiring a token would force a "fetch token first" round-trip into login. GET endpoints are exempt by HTTP method (Spring's default).
+- **Frontend.** `frontend/src/api/client.ts` reads `XSRF-TOKEN` and sets `X-XSRF-TOKEN` automatically — endpoint modules don't have to think about it.
+- **Tests.** Integration tests that POST/PUT/PATCH/DELETE must chain `.with(csrf())` on the MockMvc builder (import from `SecurityMockMvcRequestPostProcessors`). The convention in this repo is to add it on every `.session(...)` call so the test reads like a real authenticated client (it's a no-op on GETs). Register/login calls don't need it — they're exempt.
+
 ## Secrets and environment variables
 
 - **Anything sensitive goes in `.env`** (gitignored). Template: `.env.example` (committed, no real values).

@@ -1,5 +1,11 @@
 package org.example.springbootspacegame.auth;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.function.Supplier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -12,8 +18,16 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -40,11 +54,19 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        // TODO: enable CSRF before any public deploy. Disabled in v1 for simplicity
-        // while the API surface is being built. SameSite=Lax on the session cookie
-        // (Spring default) gives some baseline protection but is not sufficient on its own.
         return http
-                .csrf(csrf -> csrf.disable())
+                // SPA-style CSRF: token is exposed in a non-HttpOnly cookie (XSRF-TOKEN)
+                // and echoed by the frontend in an X-XSRF-TOKEN header on every
+                // state-changing request. /api/auth/register and /api/auth/login are
+                // exempted because they're unauthenticated by design — there's no
+                // session for an attacker to ride, so CSRF protection is moot, and
+                // requiring a token there would force a separate "fetch token first"
+                // round-trip into the login flow.
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+                        .ignoringRequestMatchers("/api/auth/register", "/api/auth/login"))
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/health").permitAll()
                         .anyRequest().authenticated()
@@ -56,5 +78,56 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable()) // we implement /api/auth/logout ourselves
                 .build();
+    }
+
+    /**
+     * Forces the deferred CSRF token to load on every request so the {@code XSRF-TOKEN}
+     * cookie is always set before the SPA needs it. Without this, the token is only
+     * issued lazily — i.e., on the first state-changing request — which would 403
+     * a fresh client that hasn't seen any prior response yet.
+     *
+     * <p>Lifted from the Spring Security reference's "Single-Page Applications"
+     * recipe (servlet/exploits/csrf#csrf-integration-javascript-spa).
+     */
+    static final class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute("_csrf");
+            if (csrfToken != null) {
+                csrfToken.getToken(); // trigger deferred cookie write
+            }
+            filterChain.doFilter(request, response);
+        }
+    }
+
+    /**
+     * Handles CSRF tokens for SPA clients. Token generation uses the XOR variant
+     * (BREACH-defense): the rendered cookie value is a fresh XOR-masked token per
+     * request, so a TLS-level compressor can't leak it. Resolution prefers the
+     * plain header path: when a request carries an {@code X-XSRF-TOKEN} header
+     * (set by the SPA from the cookie), we read it as-is — the cookie value the
+     * SPA echoes is already the masked variant and matches the server's
+     * expectation. The XOR handler is the fallback for form-encoded clients
+     * (which don't apply here but cost nothing to keep).
+     *
+     * <p>Lifted from the Spring Security reference's "Single-Page Applications"
+     * recipe (servlet/exploits/csrf#csrf-integration-javascript-spa).
+     */
+    static final class SpaCsrfTokenRequestHandler extends CsrfTokenRequestAttributeHandler {
+        private final CsrfTokenRequestHandler delegate = new XorCsrfTokenRequestAttributeHandler();
+
+        @Override
+        public void handle(HttpServletRequest request, HttpServletResponse response, Supplier<CsrfToken> csrfToken) {
+            delegate.handle(request, response, csrfToken);
+        }
+
+        @Override
+        public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken csrfToken) {
+            if (StringUtils.hasText(request.getHeader(csrfToken.getHeaderName()))) {
+                return super.resolveCsrfTokenValue(request, csrfToken);
+            }
+            return delegate.resolveCsrfTokenValue(request, csrfToken);
+        }
     }
 }

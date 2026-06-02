@@ -22,6 +22,7 @@ import java.util.Map;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -55,7 +56,7 @@ class ShipControllerIT {
         String username = "spock";
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, username, "spock@enterprise.example", "live-long-prosper");
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").isNotEmpty())
@@ -82,10 +83,24 @@ class ShipControllerIT {
     }
 
     @Test
+    void postWithoutCsrfTokenIsRejected() throws Exception {
+        // Acceptance criterion for issue #27: a state-changing request from an
+        // authenticated session without the X-XSRF-TOKEN header is rejected.
+        // Spring Security returns 403 (not 401) — auth was fine, CSRF wasn't.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper,
+                "csrf-victim", "csrf-victim@example.com", "password-victim1");
+
+        mockMvc.perform(post("/api/ships").session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void shipPositionIsWithinGrid() throws Exception {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "uhura", "uhura@enterprise.example", "frequency-open-1");
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].x", greaterThanOrEqualTo(0)))
                 .andExpect(jsonPath("$[0].x", lessThan(100)))
@@ -101,19 +116,19 @@ class ShipControllerIT {
         // The auto-created mothership keeps the bare name; subsequent ships get
         // numbered suffixes. Tests both: the default-named first ship was created
         // at register time; we POST two more and check the numbering.
-        mockMvc.perform(post("/api/ships").session(session)
+        mockMvc.perform(post("/api/ships").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value(username + "'s ship 2"));
 
-        mockMvc.perform(post("/api/ships").session(session)
+        mockMvc.perform(post("/api/ships").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value(username + "'s ship 3"));
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3));
     }
@@ -122,7 +137,7 @@ class ShipControllerIT {
     void canCreateShipWithCustomName() throws Exception {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "worf", "worf@enterprise.example", "klingon-honor1");
 
-        mockMvc.perform(post("/api/ships").session(session)
+        mockMvc.perform(post("/api/ships").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "Bird-of-Prey" }
@@ -138,7 +153,7 @@ class ShipControllerIT {
 
         // Whitespace-only name in the request body trims to empty, which we
         // treat as "no name supplied" → auto-generated.
-        mockMvc.perform(post("/api/ships").session(session)
+        mockMvc.perform(post("/api/ships").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "   " }
@@ -154,7 +169,7 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "picard", "picard@enterprise.example", "engage-1701D");
         String shipId = readFirstShipId(session);
 
-        mockMvc.perform(patch("/api/ships/" + shipId).session(session)
+        mockMvc.perform(patch("/api/ships/" + shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "Enterprise" }
@@ -169,7 +184,7 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "riker", "riker@enterprise.example", "number-one1");
         String shipId = readFirstShipId(session);
 
-        mockMvc.perform(patch("/api/ships/" + shipId).session(session)
+        mockMvc.perform(patch("/api/ships/" + shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "   " }
@@ -182,7 +197,7 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "troi", "troi@enterprise.example", "counselor1");
 
         // Create a second ship with a known name, then try to rename the first to match.
-        mockMvc.perform(post("/api/ships").session(session)
+        mockMvc.perform(post("/api/ships").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "Betazoid" }
@@ -190,7 +205,7 @@ class ShipControllerIT {
                 .andExpect(status().isCreated());
 
         String firstShipId = readFirstShipId(session);
-        mockMvc.perform(patch("/api/ships/" + firstShipId).session(session)
+        mockMvc.perform(patch("/api/ships/" + firstShipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "Betazoid" }
@@ -206,7 +221,7 @@ class ShipControllerIT {
         String dataShipId = readFirstShipId(data);
 
         // LaForge tries to rename Data's ship — should 404.
-        mockMvc.perform(patch("/api/ships/" + dataShipId).session(laforge)
+        mockMvc.perform(patch("/api/ships/" + dataShipId).session(laforge).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "Stolen" }
@@ -222,7 +237,7 @@ class ShipControllerIT {
         // explicit LAND order — it must be IDLE until one completes.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-spawn", "status-spawn@example.com", "password-spawn1");
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("IDLE"));
     }
@@ -233,21 +248,21 @@ class ShipControllerIT {
         String shipId = readFirstShipId(session);
 
         // Queue a MOVE order far enough away that it won't complete in one tick.
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("kind", "MOVE", "params", Map.of("x", 60, "y", 60)))))
                 .andExpect(status().isCreated());
 
         // PENDING branch
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("MOVING"));
 
         tickService.advanceTick(); // order transitions PENDING → ACTIVE
 
         // ACTIVE branch
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("MOVING"));
     }
@@ -259,7 +274,7 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-idle", "status-idle@example.com", "password-idle1");
         String shipId = readFirstShipId(session);
 
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("kind", "MOVE", "params", Map.of("x", 51, "y", 50)))))
@@ -267,7 +282,7 @@ class ShipControllerIT {
 
         tickService.advanceTick(); // MOVE completes — ship at (51,50), no planet there
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("IDLE"));
     }
@@ -279,14 +294,14 @@ class ShipControllerIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-land", "status-land@example.com", "password-land1");
         String shipId = readFirstShipId(session);
 
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session)
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("kind", "LAND", "params", Map.of()))))
                 .andExpect(status().isCreated());
 
         tickService.advanceTick(); // LAND order completes
 
-        mockMvc.perform(get("/api/ships").session(session))
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("LANDED"));
     }
@@ -294,7 +309,7 @@ class ShipControllerIT {
     // --- helpers ---
 
     private String readFirstShipId(MockHttpSession session) throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/ships").session(session))
+        MvcResult result = mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
