@@ -88,8 +88,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorResponse> onDataIntegrity(DataIntegrityViolationException e) {
-        // Log the real cause server-side; the client gets a generic 409.
-        log.warn("DB integrity violation: {}", e.getMostSpecificCause().getMessage());
+        // Log only the cause's class name — NOT its message. Hibernate /
+        // Postgres bake the offending column AND value into the SQLState
+        // detail ("Key (email)=(scotty@enterprise.example) already exists")
+        // which, with prod's JSON-encoded retained logs, would index PII
+        // (the email) plus schema details (the column name) every time a
+        // duplicate registration happens. We log the type for triage and
+        // rely on requestId / errorId correlation for the rest. The client
+        // still gets a generic 409.
+        Throwable cause = e.getMostSpecificCause();
+        log.warn("DB integrity violation: {}", cause.getClass().getSimpleName());
         ApiErrorResponse body = ApiErrorResponse.of(
                 HttpStatus.CONFLICT.value(), "Conflict with existing data");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);

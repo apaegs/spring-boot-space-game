@@ -61,13 +61,28 @@ class GlobalExceptionHandlerIT {
         String body = """
                 { "username": "", "email": "not-an-email", "password": "x" }
                 """;
-        mockMvc.perform(post("/api/auth/register")
+        mockMvc.perform(post("/api/auth/register").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("Validation failed"))
                 .andExpect(jsonPath("$.details.username").exists())
+                .andExpect(jsonPath("$.errorId").doesNotExist());
+    }
+
+    @Test
+    void malformedJsonBodyReturns400WithGenericMessage() throws Exception {
+        // Body is broken JSON — HttpMessageNotReadableException fires before
+        // any @Valid runs. Advice branch returns 400 with a generic message
+        // (we don't leak Jackson's parser detail to the client).
+        mockMvc.perform(post("/api/auth/register").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{ this isn't json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Malformed request body"))
+                .andExpect(jsonPath("$.details").doesNotExist())
                 .andExpect(jsonPath("$.errorId").doesNotExist());
     }
 
@@ -86,7 +101,7 @@ class GlobalExceptionHandlerIT {
     @Test
     void wrongPasswordReturns401WithStableShape() throws Exception {
         // Register first so the account exists.
-        mockMvc.perform(post("/api/auth/register")
+        mockMvc.perform(post("/api/auth/register").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "username": "scotty",
@@ -95,7 +110,7 @@ class GlobalExceptionHandlerIT {
                                 """))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post("/api/auth/login")
+        mockMvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "username": "scotty", "password": "wrong" }
@@ -103,6 +118,42 @@ class GlobalExceptionHandlerIT {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.message").value("Invalid credentials"));
+    }
+
+    // --- 409: DB integrity --------------------------------------------------
+
+    @Test
+    void dataIntegrityViolationReturns409WithGenericMessage() throws Exception {
+        // /api/test-errors/data-integrity throws DataIntegrityViolationException
+        // with a Postgres-flavored message that includes a column name + a
+        // value. Advice's onDataIntegrity should log only the cause CLASS
+        // (we trust that elsewhere — here we just assert the wire shape) and
+        // return a generic 409. No errorId on this branch; details absent.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper,
+                "shape-integrity", "shape-integrity@example.com", "password-int-1");
+        mockMvc.perform(get("/api/test-errors/data-integrity").session(session).with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value("Conflict with existing data"))
+                .andExpect(jsonPath("$.details").doesNotExist())
+                .andExpect(jsonPath("$.errorId").doesNotExist());
+    }
+
+    // --- 403: AccessDenied from a controller (non-CSRF path) ----------------
+
+    @Test
+    void accessDeniedFromControllerReturns403() throws Exception {
+        // /api/test-errors/access-denied throws AccessDeniedException from
+        // inside the controller. Spring Security's filter-chain handler is
+        // configured to disambiguate CSRF; here the exception is from after
+        // the chain, so the @ControllerAdvice's onAccessDenied branch fires
+        // with the generic "Access denied" message.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper,
+                "shape-denied", "shape-denied@example.com", "password-den-1");
+        mockMvc.perform(get("/api/test-errors/access-denied").session(session).with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value("Access denied"));
     }
 
     // --- 403: CSRF missing on state-changing -------------------------------
