@@ -7,6 +7,26 @@
  *
  * Keep these in sync with the matching `*Dto` record in the backend whenever
  * a DTO changes. CLAUDE.md "Entity vs DTO" rule means DTOs are the contract.
+ *
+ * Backing Java source-of-truth (one per type below). If you change a record
+ * over there, the corresponding type here MUST be updated in the same PR —
+ * nothing binds them at build time:
+ *
+ *   MeResponse         → auth/MeResponse.java
+ *   RegisterRequest    → auth/RegisterRequest.java
+ *   LoginRequest       → auth/LoginRequest.java
+ *   ShipStatus         → ship/ShipStatus.java
+ *   ShipDto            → ship/ShipDto.java
+ *   CreateShipRequest  → ship/CreateShipRequest.java
+ *   PublicShipDto      → ship/PublicShipDto.java
+ *   WorldDto           → world/WorldDto.java
+ *   PlanetDto          → planet/PlanetDto.java
+ *   OrderKind          → order/OrderKind.java
+ *   OrderStatus        → order/OrderStatus.java
+ *   ShipOrderDto       → order/ShipOrderDto.java
+ *   CreateOrderRequest → order/CreateOrderRequest.java
+ *
+ * Paths are relative to src/main/java/org/example/springbootspacegame/.
  */
 
 // --- auth ---

@@ -1,0 +1,70 @@
+# Dependabot: keep deps fresh without manual `pnpm outdated` / `mvn versions:display-dependency-updates`.
+#
+# Layout: one ecosystem per source-of-truth.
+#   - npm        — frontend pnpm tree
+#   - maven      — backend pom.xml
+#   - github-actions — workflow files (we pin actions by commit SHA, so updates land here)
+#   - docker     — Dockerfile base images (we pin by digest in #69; without this, the digests rot)
+#
+# Grouping: minor + patch land as one weekly PR per ecosystem to keep noise low.
+# Majors get their own PR — they almost always need attention beyond "click merge".
+#
+# Auto-merge is intentionally off until frontend tests land (#62). Once vitest + CI
+# coverage exists, a follow-up can enable `auto-merge` for the patch group.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+      include: scope
