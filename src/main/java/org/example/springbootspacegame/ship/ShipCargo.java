@@ -58,13 +58,15 @@ public class ShipCargo {
     }
 
     /**
-     * Increase qty by {@code units}. {@link Math#addExact} surfaces overflow
-     * as an exception instead of wrapping into a negative quantity that the
-     * DB CHECK would reject anyway.
+     * Increase qty by {@code units}. Rejects {@code units <= 0} — a zero
+     * increment is a useless no-op and almost always a caller bug; negative
+     * deltas would violate the entity's {@code qty > 0} invariant.
+     * {@link Math#addExact} surfaces overflow as an exception instead of
+     * wrapping into a negative quantity.
      */
     public void incrementBy(int units) {
-        if (units < 0) {
-            throw new IllegalArgumentException("units must be >= 0, was " + units);
+        if (units <= 0) {
+            throw new IllegalArgumentException("units must be > 0, was " + units);
         }
         this.qty = Math.addExact(this.qty, units);
     }
