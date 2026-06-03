@@ -44,6 +44,12 @@ public class BodyResource {
     private int reserve;
 
     public BodyResource(UUID bodyId, ResourceKind resourceKind, int reserve) {
+        // Mirrors the V8 DB CHECK (reserve >= 0). A row with reserve = 0 is
+        // valid — it means "depleted but used to have", distinct from no row
+        // at all ("never had").
+        if (reserve < 0) {
+            throw new IllegalArgumentException("reserve must be >= 0, was " + reserve);
+        }
         this.bodyId = bodyId;
         this.resourceKind = resourceKind;
         this.reserve = reserve;
@@ -51,10 +57,14 @@ public class BodyResource {
 
     /**
      * Decrement the reserve by {@code units}. Caller must clamp to the
-     * available amount — this method assumes the caller has already validated.
-     * The DB CHECK ({@code reserve >= 0}) enforces non-negative at flush time.
+     * available amount. The DB CHECK ({@code reserve >= 0}) enforces
+     * non-negative at flush time; this guard rejects negative deltas at the
+     * mutation point so a buggy caller can't silently mint reserves.
      */
     public void decrementBy(int units) {
+        if (units < 0) {
+            throw new IllegalArgumentException("units must be >= 0, was " + units);
+        }
         this.reserve -= units;
     }
 }

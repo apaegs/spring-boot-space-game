@@ -43,6 +43,11 @@ public class BodyBuyPrice {
     private int pricePerUnit;
 
     public BodyBuyPrice(UUID bodyId, ResourceKind resourceKind, int pricePerUnit) {
+        // Mirrors the V8 DB CHECK (price_per_unit > 0). Failing in the
+        // constructor surfaces the bug at the call site instead of at flush time.
+        if (pricePerUnit <= 0) {
+            throw new IllegalArgumentException("pricePerUnit must be > 0, was " + pricePerUnit);
+        }
         this.bodyId = bodyId;
         this.resourceKind = resourceKind;
         this.pricePerUnit = pricePerUnit;

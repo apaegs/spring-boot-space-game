@@ -61,11 +61,16 @@ public class User {
 
     /**
      * Add {@code amount} credits to the user's balance. Called by the SELL
-     * order handler (PR 2). Caller must validate {@code amount >= 0} —
-     * negative deltas would silently grant credits.
+     * order handler (PR 2). Rejects negative deltas (which would silently
+     * drain a player's balance via a "negative sale") and uses
+     * {@link Math#addExact} so overflow throws instead of wrapping into a
+     * massively negative balance.
      */
     public void addCredits(long amount) {
-        this.credits += amount;
+        if (amount < 0) {
+            throw new IllegalArgumentException("amount must be >= 0, was " + amount);
+        }
+        this.credits = Math.addExact(this.credits, amount);
     }
 
     @PrePersist

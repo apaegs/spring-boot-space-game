@@ -6,7 +6,7 @@ Living document for the game's core domain. Updated in the **same PR** as any sc
 
 ## Overview
 
-The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with planets. The world ticks in the background (≤ 1 min) and processes any orders queued on ships.
+The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with celestial bodies (planets, asteroids, gas giants, stars). The world ticks in the background (≤ 1 min) and processes any orders queued on ships.
 
 Players queue a sequence of orders (MOVE, LAND, …) on their ship, log out, and the world advances those orders one step per tick while they're away.
 
@@ -18,7 +18,7 @@ User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
               (x, y) on Grid (100×100)
                      │
                      ▼ can LAND on
-                  Planet (pre-seeded)
+              CelestialBody (pre-seeded; kind ∈ {ROCKY_PLANET, LAVA_PLANET, ICE_PLANET, GAS_GIANT, ASTEROID, STAR})
 
 WorldState (singleton)              # current_tick, last_tick_at
 ```

@@ -45,16 +45,38 @@ public class ShipCargo {
     private int qty;
 
     public ShipCargo(UUID shipId, ResourceKind resourceKind, int qty) {
+        // Entity invariant is qty > 0 (stricter than the DB CHECK qty >= 0).
+        // A zero-quantity cargo row carries no information — callers should
+        // delete the row instead. EXTRACT handler (PR 2) creates rows with
+        // qty > 0; SELL deletes the row rather than setting qty = 0.
+        if (qty <= 0) {
+            throw new IllegalArgumentException("qty must be > 0, was " + qty);
+        }
         this.shipId = shipId;
         this.resourceKind = resourceKind;
         this.qty = qty;
     }
 
+    /**
+     * Increase qty by {@code units}. {@link Math#addExact} surfaces overflow
+     * as an exception instead of wrapping into a negative quantity that the
+     * DB CHECK would reject anyway.
+     */
     public void incrementBy(int units) {
-        this.qty += units;
+        if (units < 0) {
+            throw new IllegalArgumentException("units must be >= 0, was " + units);
+        }
+        this.qty = Math.addExact(this.qty, units);
     }
 
+    /**
+     * Replace qty. Enforces the same {@code qty > 0} invariant as the
+     * constructor — to "empty" a cargo row, delete the row.
+     */
     public void setQty(int qty) {
+        if (qty <= 0) {
+            throw new IllegalArgumentException("qty must be > 0, was " + qty);
+        }
         this.qty = qty;
     }
 }
