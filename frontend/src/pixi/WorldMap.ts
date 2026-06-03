@@ -1,5 +1,5 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text, TextStyle } from 'pixi.js'
-import type { PlanetDto } from '../types/api'
+import type { CelestialBodyDto } from '../types/api'
 import {
     CANVAS_PX as HELPER_CANVAS_PX,
     GRID_CELLS as HELPER_GRID_CELLS,
@@ -30,7 +30,7 @@ export type ShipOnMap = {
  */
 export type MapSelection =
     | { kind: 'ship'; id: string }
-    | { kind: 'planet'; id: string }
+    | { kind: 'body'; id: string }
     | null
 
 /**
@@ -41,7 +41,7 @@ export type MapSelection =
  */
 export type HoverInfo =
     | { kind: 'ship'; ship: ShipOnMap; screenX: number; screenY: number }
-    | { kind: 'planet'; planet: PlanetDto; screenX: number; screenY: number }
+    | { kind: 'body'; body: CelestialBodyDto; screenX: number; screenY: number }
     | null
 
 /**
@@ -59,16 +59,16 @@ export type HoverInfo =
  * <h3>Click semantics</h3>
  * Two modes:
  * <ul>
- *   <li><b>Normal</b>: ship-and-planet markers capture clicks ({@code
- *       onShipClick} / {@code onPlanetClick} fire, the tile underneath does
+ *   <li><b>Normal</b>: ship-and-body markers capture clicks ({@code
+ *       onShipClick} / {@code onBodyClick} fire, the tile underneath does
  *       <i>not</i> fire). Empty-tile clicks call {@code onTileClick}. UI uses
  *       this for "select that thing".</li>
- *   <li><b>Targeting</b> (set via {@link setTargetingMode}): ships and planets
+ *   <li><b>Targeting</b> (set via {@link setTargetingMode}): ships and bodies
  *       become transparent to pointer events ({@code eventMode = 'none'}), so
- *       a click anywhere — including on top of a planet's disc or another
+ *       a click anywhere — including on top of a body's disc or another
  *       ship's triangle — falls through to the background and fires
  *       {@code onTileClick} for the tile under the cursor. Lets the player
- *       MOVE-target a planet's tile without the planet "swallowing" the click.</li>
+ *       MOVE-target a body's tile without the body "swallowing" the click.</li>
  * </ul>
  */
 export class WorldMap {
@@ -105,15 +105,15 @@ export class WorldMap {
     private static readonly COLORS = {
         background: 0x0a0a1a,
         gridLine: 0x2a2a4a,
-        planet: 0xffaa00,
-        planetLabel: 0xffffff,
+        body: 0xffaa00,
+        bodyLabel: 0xffffff,
         shipOwn: 0x66ddff,
         shipForeign: 0xc266aa,
         shipSelected: 0xfff066,
         shipOutline: 0xffffff,
         hover: 0x66ddff,
         selectionRingShip: 0x66ddff,
-        selectionRingPlanet: 0xffdd88,
+        selectionRingBody: 0xffdd88,
     }
 
     private app: Application | null = null
@@ -144,12 +144,12 @@ export class WorldMap {
     private gridLayer: Graphics | null = null
     private hoverLayer: Graphics | null = null
     private selectionLayer: Graphics | null = null
-    private planetsLayer: Container | null = null
+    private bodiesLayer: Container | null = null
     private shipsLayer: Container | null = null
 
     // Cached so we can re-render when selection / zoom changes without the
     // caller having to keep passing the same arrays.
-    private planets: PlanetDto[] = []
+    private bodies: CelestialBodyDto[] = []
     private ships: ShipOnMap[] = []
     private selection: MapSelection = null
     private hoverTile: { x: number; y: number } | null = null
@@ -157,7 +157,7 @@ export class WorldMap {
 
     private onTileClick: ((x: number, y: number) => void) | null = null
     private onShipClick: ((ship: ShipOnMap) => void) | null = null
-    private onPlanetClick: ((planet: PlanetDto) => void) | null = null
+    private onBodyClick: ((body: CelestialBodyDto) => void) | null = null
     private onRightClick: (() => void) | null = null
     private onEntityHover: ((info: HoverInfo) => void) | null = null
 
@@ -199,19 +199,19 @@ export class WorldMap {
         app.stage.addChild(this.worldLayer)
 
         // Grid first (bottom), hover next so it sits over the grid but under
-        // planets and ships — keeps the highlight from covering a planet's
+        // bodies and ships — keeps the highlight from covering a body's
         // label or a ship's marker when the cursor lands on it. Selection ring
         // sits between hover and the entity layers so it's clearly visible
         // behind the marker but above the hover tile fill.
         this.gridLayer = new Graphics()
         this.hoverLayer = new Graphics()
         this.selectionLayer = new Graphics()
-        this.planetsLayer = new Container()
+        this.bodiesLayer = new Container()
         this.shipsLayer = new Container()
         this.worldLayer.addChild(this.gridLayer)
         this.worldLayer.addChild(this.hoverLayer)
         this.worldLayer.addChild(this.selectionLayer)
-        this.worldLayer.addChild(this.planetsLayer)
+        this.worldLayer.addChild(this.bodiesLayer)
         this.worldLayer.addChild(this.shipsLayer)
 
         this.applyCamera()
@@ -235,17 +235,17 @@ export class WorldMap {
             this.gridLayer = null
             this.hoverLayer = null
             this.selectionLayer = null
-            this.planetsLayer = null
+            this.bodiesLayer = null
             this.shipsLayer = null
         }
     }
 
-    setPlanets(planets: PlanetDto[]): void {
-        this.planets = planets
-        this.renderPlanets()
-        // A planet's position may be what the camera is locked to — recompute
-        // in case the planet entries arrived after the selection was set.
-        if (this.selection?.kind === 'planet') {
+    setBodies(bodies: CelestialBodyDto[]): void {
+        this.bodies = bodies
+        this.renderBodies()
+        // A body's position may be what the camera is locked to — recompute
+        // in case the body entries arrived after the selection was set.
+        if (this.selection?.kind === 'body') {
             this.updateCameraForSelection()
             this.renderSelectionRing()
         }
@@ -266,21 +266,21 @@ export class WorldMap {
         this.selection = selection
         this.updateCameraForSelection()
         this.renderShips()
-        this.renderPlanets()
+        this.renderBodies()
         this.renderSelectionRing()
     }
 
     /**
-     * Toggle pointer-event transparency on ships + planets. In targeting mode,
+     * Toggle pointer-event transparency on ships + bodies. In targeting mode,
      * clicks pass through markers to the background's tile-click handler — the
-     * player can MOVE-target a planet's tile without the planet swallowing the
+     * player can MOVE-target a body's tile without the body swallowing the
      * click. Normal mode restores marker-level handlers.
      */
     setTargetingMode(active: boolean): void {
         if (this.targeting === active) return
         this.targeting = active
         this.renderShips()
-        this.renderPlanets()
+        this.renderBodies()
     }
 
     setOnTileClick(callback: ((x: number, y: number) => void) | null): void {
@@ -291,8 +291,8 @@ export class WorldMap {
         this.onShipClick = callback
     }
 
-    setOnPlanetClick(callback: ((planet: PlanetDto) => void) | null): void {
-        this.onPlanetClick = callback
+    setOnBodyClick(callback: ((body: CelestialBodyDto) => void) | null): void {
+        this.onBodyClick = callback
     }
 
     /**
@@ -305,7 +305,7 @@ export class WorldMap {
     }
 
     /**
-     * Fired when the cursor enters or moves within a ship/planet marker, and
+     * Fired when the cursor enters or moves within a ship/body marker, and
      * with {@code null} when it leaves. Used by the React layer to drive
      * a tooltip overlay. Markers go {@code eventMode = 'none'} in targeting
      * mode, so this naturally stays silent there.
@@ -348,8 +348,8 @@ export class WorldMap {
             const ship = this.ships.find((s) => s.id === this.selection!.id)
             return ship ? { x: ship.x, y: ship.y } : null
         }
-        const planet = this.planets.find((p) => p.id === this.selection!.id)
-        return planet ? { x: planet.x, y: planet.y } : null
+        const body = this.bodies.find((p) => p.id === this.selection!.id)
+        return body ? { x: body.x, y: body.y } : null
     }
 
     private applyCamera(): void {
@@ -399,24 +399,24 @@ export class WorldMap {
         this.gridLayer.stroke({ color: WorldMap.COLORS.gridLine, alpha: 1, width: lineWidth })
     }
 
-    private renderPlanets(): void {
-        if (!this.planetsLayer) return
-        this.planetsLayer.removeChildren()
+    private renderBodies(): void {
+        if (!this.bodiesLayer) return
+        this.bodiesLayer.removeChildren()
 
-        for (const planet of this.planets) {
-            const { px, py } = WorldMap.tileToPx(planet.x, planet.y)
+        for (const body of this.bodies) {
+            const { px, py } = WorldMap.tileToPx(body.x, body.y)
 
             const dot = new Graphics()
             // Visible disc capped at {@link MARKER_MAX_HALF} so it can't draw
             // past its tile. The transparent hit area stays large for click
             // accessibility at world zoom — only the visible bound is capped.
             dot.circle(px, py, 10)
-            dot.fill({ color: WorldMap.COLORS.planet, alpha: 0 })
+            dot.fill({ color: WorldMap.COLORS.body, alpha: 0 })
             dot.circle(px, py, WorldMap.MARKER_MAX_HALF)
-            dot.fill(WorldMap.COLORS.planet)
+            dot.fill(WorldMap.COLORS.body)
             if (this.targeting) {
-                // In targeting mode the planet must NOT swallow the click —
-                // a MOVE-targeting click on a planet's tile is queued like any
+                // In targeting mode the body must NOT swallow the click —
+                // a MOVE-targeting click on a body's tile is queued like any
                 // other tile click. Setting eventMode 'none' lets the click
                 // fall through to the background's hit area. Hover/right-click
                 // both intentionally drop out here too: no tooltips during
@@ -433,39 +433,39 @@ export class WorldMap {
                         return
                     }
                     if (e.button !== 0) return
-                    this.onPlanetClick?.(planet)
+                    this.onBodyClick?.(body)
                 })
                 dot.on('pointerover', (e: FederatedPointerEvent) =>
                     this.onEntityHover?.({
-                        kind: 'planet',
-                        planet,
+                        kind: 'body',
+                        body,
                         screenX: e.global.x,
                         screenY: e.global.y,
                     })
                 )
                 dot.on('pointermove', (e: FederatedPointerEvent) =>
                     this.onEntityHover?.({
-                        kind: 'planet',
-                        planet,
+                        kind: 'body',
+                        body,
                         screenX: e.global.x,
                         screenY: e.global.y,
                     })
                 )
                 dot.on('pointerout', () => this.onEntityHover?.(null))
             }
-            this.planetsLayer.addChild(dot)
+            this.bodiesLayer.addChild(dot)
 
             const label = new Text({
-                text: planet.name,
+                text: body.name,
                 style: new TextStyle({
                     fontFamily: 'system-ui, sans-serif',
                     fontSize: 9,
-                    fill: WorldMap.COLORS.planetLabel,
+                    fill: WorldMap.COLORS.bodyLabel,
                 }),
             })
             label.x = px + 6
             label.y = py - 5
-            this.planetsLayer.addChild(label)
+            this.bodiesLayer.addChild(label)
         }
     }
 
@@ -548,7 +548,7 @@ export class WorldMap {
      * player has no selection, the zoom is centred on the cursor (the world
      * tile under the cursor stays fixed). When something is selected the
      * camera is selection-locked, so we just change zoom and let the next
-     * {@link setShips}/{@link setPlanets} re-snap as the entity moves.
+     * {@link setShips}/{@link setBodies} re-snap as the entity moves.
      */
     private handleWheel(event: WheelEvent): void {
         if (!this.canvas) return
@@ -563,7 +563,7 @@ export class WorldMap {
         // Cursor-centered: pin the world point under the cursor across the
         // zoom change. Only applies when there's no selection — with a
         // selection active the camera is locked to the entity and shifting
-        // it here would just be undone on the next setShips/setPlanets call.
+        // it here would just be undone on the next setShips/setBodies call.
         if (this.selection === null) {
             const rect = this.canvas.getBoundingClientRect()
             const cursorX = event.clientX - rect.left
@@ -620,8 +620,8 @@ export class WorldMap {
 
     /**
      * Draw a static outline ring around the currently selected entity.
-     * Ship selections get a cyan ring ({@code selectionRingShip}); planet
-     * selections get an amber ring ({@code selectionRingPlanet}). The ring
+     * Ship selections get a cyan ring ({@code selectionRingShip}); body
+     * selections get an amber ring ({@code selectionRingBody}). The ring
      * radius is slightly larger than the marker so it's visible without
      * overlapping the entity geometry. Clears when nothing is selected.
      */
@@ -646,7 +646,7 @@ export class WorldMap {
         } else {
             this.selectionLayer.circle(px, py, ringRadius)
             this.selectionLayer.stroke({
-                color: WorldMap.COLORS.selectionRingPlanet,
+                color: WorldMap.COLORS.selectionRingBody,
                 alpha: 0.85,
                 width: 1,
             })

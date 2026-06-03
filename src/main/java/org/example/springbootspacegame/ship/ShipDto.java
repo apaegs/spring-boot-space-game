@@ -15,6 +15,7 @@ public record ShipDto(
         String name,
         int x,
         int y,
+        UUID shipTypeId,
         OffsetDateTime createdAt,
         ShipStatus status
 ) {
@@ -24,6 +25,7 @@ public record ShipDto(
                 ship.getName(),
                 ship.getX(),
                 ship.getY(),
+                ship.getShipTypeId(),
                 ship.getCreatedAt(),
                 status
         );

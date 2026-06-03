@@ -8,7 +8,7 @@
  *     request (POST/PUT/PATCH/DELETE)
  *   - turns non-2xx responses into typed `ApiError`s the UI can branch on
  *
- * Each endpoint-specific module (auth, ship, world, planets, orders) builds
+ * Each endpoint-specific module (auth, ship, world, bodies, orders) builds
  * on this so error handling is uniform across the SPA.
  */
 

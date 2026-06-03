@@ -43,6 +43,13 @@ public class User {
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
+    /**
+     * In-game currency. Earned by the SELL order handler (PR 2). Starting
+     * balance is 0; the DB DEFAULT in V8 backfills existing rows.
+     */
+    @Column(nullable = false)
+    private long credits;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -50,6 +57,20 @@ public class User {
         this.username = username;
         this.email = email;
         this.passwordHash = passwordHash;
+    }
+
+    /**
+     * Add {@code amount} credits to the user's balance. Called by the SELL
+     * order handler (PR 2). Rejects negative deltas (which would silently
+     * drain a player's balance via a "negative sale") and uses
+     * {@link Math#addExact} so overflow throws instead of wrapping into a
+     * massively negative balance.
+     */
+    public void addCredits(long amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("amount must be >= 0, was " + amount);
+        }
+        this.credits = Math.addExact(this.credits, amount);
     }
 
     @PrePersist

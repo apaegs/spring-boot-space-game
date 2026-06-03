@@ -22,6 +22,7 @@ function ship(id: string, name = id): ShipDto {
         name,
         x: 0,
         y: 0,
+        shipTypeId: '00000000-0000-0000-0000-000000000001',
         createdAt: '2026-01-01T00:00:00Z',
         status: 'IDLE',
     }
@@ -45,7 +46,7 @@ function Probe() {
             <span data-testid="selection-kind">{selection?.kind ?? 'none'}</span>
             <span data-testid="selection-id">{selection?.kind === 'ship' ? selection.id : ''}</span>
             <span data-testid="selected-ship-id">{selectedShipId ?? ''}</span>
-            <button onClick={() => setSelection({ kind: 'planet', id: 'p-1' })}>pick-planet</button>
+            <button onClick={() => setSelection({ kind: 'body', id: 'b-1' })}>pick-body</button>
             <button onClick={() => setSelection(null)}>pick-none</button>
         </div>
     )
@@ -101,7 +102,7 @@ describe('SelectionProvider', () => {
         expect(screen.getByTestId('selected-ship-id')).toHaveTextContent('')
     })
 
-    it('selectedShipId is null when a planet is selected', async () => {
+    it('selectedShipId is null when a body is selected', async () => {
         listMyShipsMock.mockResolvedValueOnce([ship('s-1')])
 
         render(<Probe />, { wrapper })
@@ -110,9 +111,9 @@ describe('SelectionProvider', () => {
         })
 
         const user = userEvent.setup()
-        await user.click(screen.getByText('pick-planet'))
+        await user.click(screen.getByText('pick-body'))
 
-        expect(screen.getByTestId('selection-kind')).toHaveTextContent('planet')
+        expect(screen.getByTestId('selection-kind')).toHaveTextContent('body')
         expect(screen.getByTestId('selected-ship-id')).toHaveTextContent('')
     })
 

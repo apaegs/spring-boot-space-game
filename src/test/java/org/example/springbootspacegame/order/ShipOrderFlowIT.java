@@ -88,8 +88,8 @@ class ShipOrderFlowIT {
     }
 
     @Test
-    void landOnPlanetCompletesInOneTick() throws Exception {
-        // Player spawns at (50, 50) — Earth is seeded there in V5, so LAND
+    void landOnBodyCompletesInOneTick() throws Exception {
+        // Player spawns at (50, 50) — Earth is seeded there in V9, so LAND
         // succeeds immediately without any MOVE first.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "janeway", "janeway@enterprise.example", "coffee-black-1");
         UUID shipId = firstShipIdFor(session);
@@ -103,17 +103,18 @@ class ShipOrderFlowIT {
     }
 
     @Test
-    void landOffPlanetCancelsWithReason() throws Exception {
+    void landOffBodyCancelsWithReason() throws Exception {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "picard", "picard@enterprise.example", "engage-warp-7");
         UUID shipId = firstShipIdFor(session);
 
-        // MOVE one tile off-spawn (Earth is at 50,50), then LAND on an empty
-        // tile — LAND should cancel because there's no planet under the ship.
+        // MOVE one tile off-spawn (Earth is at 50,50; (51,50) is empty in V9),
+        // then LAND on the empty tile — LAND should cancel because there's no
+        // celestial body under the ship.
         postOrder(session, shipId, "MOVE", Map.of("x", 51, "y", 50));
         UUID landId = postOrder(session, shipId, "LAND", Map.of());
 
         tickService.advanceTick(); // MOVE completes (51, 50)
-        tickService.advanceTick(); // LAND fires, finds no planet, cancels
+        tickService.advanceTick(); // LAND fires, finds no body, cancels
 
         ShipOrder land = orderRepository.findById(landId).orElseThrow();
         assertThat(land.getStatus()).isEqualTo(OrderStatus.CANCELLED);

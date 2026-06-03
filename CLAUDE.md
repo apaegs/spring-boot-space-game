@@ -4,7 +4,7 @@ This file is for two readers: **the friend being onboarded** and **Claude the ag
 
 ## What the project is
 
-A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid with planets and stars. The player sets a destination, the ship moves 1 tile per tick, and on arrival at a planet the player can land and interact. The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
+A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid populated with celestial bodies (planets, asteroids, gas giants, stars). The player sets a destination, the ship moves 1 tile per tick, and on arrival at a body the player can land and interact. The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
 
 Detailed domain model: see [DOMAIN.md](DOMAIN.md).
 
@@ -35,6 +35,7 @@ App on http://localhost:8080.
 
 - **React + Vite** in `frontend/`. Backend exposes REST under `/api/**`.
 - **TS API types mirror the backend records.** `frontend/src/types/api.ts` is hand-written, not generated. The file's top comment lists every type's backing Java source-of-truth — update both sides in the same PR when a DTO changes.
+- **"Bodies" not "planets".** The map renders `CelestialBody` (planets, asteroids, gas giants, stars). TS types, selection discriminator (`{ kind: 'body' }`), API path (`/api/bodies`), and Pixi layer names all use "body" / "bodies". User-facing labels can still say "planet" where it's accurate (e.g. for `ROCKY_PLANET` kind in the panel).
 - **PixiJS** for the 2D map — a `<canvas>` mounted in a React component. Pixi code lives isolated from the React tree (Pixi owns its own render loop); React only syncs state in via props/refs and reads events back via callbacks.
 - **Not** Phaser — overkill for tick-based.
 - Animated numbers via a lightweight lib (e.g. `framer-motion` or `react-spring`); no reason to write your own easing functions.
@@ -46,8 +47,9 @@ App on http://localhost:8080.
 Package **by domain**, not by technical layer:
 ```text
 org.example.springbootspacegame
-├── ship/           # Entity, Repository, Service, Controller for Ship
-├── planet/         # ... for Planet
+├── ship/           # Entity, Repository, Service, Controller for Ship (+ ShipType, ShipCargo)
+├── body/           # CelestialBody, BodyResource, BodyBuyPrice + repos/service
+├── resource/       # ResourceKind enum (catalog of extractable/tradeable resources)
 ├── world/          # WorldState + grid-related logic
 ├── tick/           # Tick scheduler
 └── auth/           # User, login, registration
@@ -142,10 +144,15 @@ Free-form text in English, but keep each commit focused on one thing. Imperative
 
 Use these terms consistently in code, commits, issues and discussion. Detailed model in [DOMAIN.md](DOMAIN.md).
 
-- **User** — The person behind the account. Authentication identity, no gameplay state.
-- **Ship** — The player's mothership. In v1 every User has exactly one Ship; the schema permits more for future fleet support.
-- **Planet** — A pre-seeded point on the map that a Ship can land on.
-- **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, Planet) have coordinates.
+- **User** — The person behind the account. Authentication identity + `credits` (in-game currency).
+- **Ship** — The player's mothership. Every Ship has a `ship_type_id` pointing into the ship types catalog (v1: only `MOTHERSHIP`).
+- **ShipType** — A row in the ship types catalog. Stats per type (cargo capacity, extract rate) live here, not on the ship row.
+- **ShipCargo** — Per-(ship, resource) inventory row. Cargo cap is enforced against the sum across all resources.
+- **CelestialBody** — A pre-seeded point on the map (planet, asteroid, gas giant, star). Has a `kind` from `CelestialBodyKind`. Bodies are the only valid LAND targets and the only source of resources.
+- **BodyResource** — Per-(body, resource) reserve. The EXTRACT handler decrements it.
+- **BodyBuyPrice** — Per-(body, resource) buy price. The SELL handler reads it.
+- **ResourceKind** — The catalogue of resources (`IRON`, `WATER`, `HYDROGEN`, `HELIUM`, `RARE_METAL`). Each declares its required extraction state.
+- **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, CelestialBody) have coordinates.
 - **Tick** — A recurring time interval (≤ 1 min) when the world is processed: ships in motion are advanced, future feature effects are triggered. Scheduled centrally.
 - **World** — The global state all players share (grid size, current tick). A single `WorldState` singleton row.
 

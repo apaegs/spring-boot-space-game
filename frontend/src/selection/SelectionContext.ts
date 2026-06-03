@@ -2,17 +2,18 @@ import { createContext, useContext } from 'react'
 
 /**
  * What the player has currently selected on the map / in the sidebar. The
- * selection can be a ship (their own or another player's), a planet, or
- * nothing. The {@code kind} tag lets consumers branch without type assertions.
+ * selection can be a ship (their own or another player's), a celestial body
+ * (planet, asteroid, gas giant, star), or nothing. The {@code kind} tag lets
+ * consumers branch without type assertions.
  *
  * <p>Selection ids are opaque server IDs — the consumer fetches the actual
  * entity from its own data source (own ships from `useQuery('ships')`,
- * planets from `useQuery('planets')`, foreign ships from
+ * bodies from `useQuery('bodies')`, foreign ships from
  * `useQuery('world-ships')`).
  */
 export type Selection =
     | { kind: 'ship'; id: string }
-    | { kind: 'planet'; id: string }
+    | { kind: 'body'; id: string }
     | null
 
 export type SelectionState = {

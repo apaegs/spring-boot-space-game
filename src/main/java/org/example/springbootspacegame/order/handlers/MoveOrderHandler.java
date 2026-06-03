@@ -46,7 +46,7 @@ public class MoveOrderHandler implements OrderHandler {
         int targetX = intParam(order, "x");
         int targetY = intParam(order, "y");
 
-        // Already on target (e.g. queued LAND while on a planet, then a MOVE
+        // Already on target (e.g. queued LAND while on a body, then a MOVE
         // to that same tile redundantly). Complete in one tick, no movement.
         if (ship.getX() == targetX && ship.getY() == targetY) {
             return OrderResult.completed();
