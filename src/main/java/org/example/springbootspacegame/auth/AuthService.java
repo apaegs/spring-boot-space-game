@@ -92,4 +92,31 @@ public class AuthService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
         return MeResponse.from(user);
     }
+
+    /**
+     * Hard-delete the currently authenticated user. Cascades through ships and
+     * ship_orders via the FK {@code ON DELETE CASCADE} clauses already in place
+     * (V2 for ships → users, V4 for ship_orders → ships) — no follow-up writes
+     * needed here.
+     *
+     * <p>Session invalidation is the caller's job ({@link AuthController#deleteMe})
+     * because it has the {@code HttpServletRequest}. This service layer only
+     * touches the DB.
+     */
+    @Transactional
+    public void deleteCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()
+                || !(auth.getPrincipal() instanceof AuthenticatedUser principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        // The request is already authenticated; if the backing users row is
+        // gone, the session identity has gone stale. Surface 401 to match
+        // getCurrentUser() above — the frontend's session-cleanup + redirect
+        // flow is keyed off 401, not 404.
+        if (!userRepository.existsById(principal.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        userRepository.deleteById(principal.getUserId());
+    }
 }

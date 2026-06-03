@@ -1,4 +1,8 @@
-import { defineConfig } from 'vite'
+// `defineConfig` comes from `vitest/config` (not `vite`) so the same file
+// configures both `vite build` and `vitest run`. Vitest's defineConfig is a
+// superset — it adds the `test` field and otherwise behaves identically to
+// Vite's. No second config file needed.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
@@ -18,5 +22,13 @@ export default defineConfig({
                 changeOrigin: true,
             },
         },
+    },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: ['./src/test/setup.ts'],
+        // Keep tests fast: don't sweep node_modules, dist, build output.
+        include: ['src/**/*.{test,spec}.{ts,tsx}'],
+        css: false,
     },
 })

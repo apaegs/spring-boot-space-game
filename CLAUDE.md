@@ -34,6 +34,7 @@ App on http://localhost:8080.
 ## Frontend
 
 - **React + Vite** in `frontend/`. Backend exposes REST under `/api/**`.
+- **TS API types mirror the backend records.** `frontend/src/types/api.ts` is hand-written, not generated. The file's top comment lists every type's backing Java source-of-truth — update both sides in the same PR when a DTO changes.
 - **PixiJS** for the 2D map — a `<canvas>` mounted in a React component. Pixi code lives isolated from the React tree (Pixi owns its own render loop); React only syncs state in via props/refs and reads events back via callbacks.
 - **Not** Phaser — overkill for tick-based.
 - Animated numbers via a lightweight lib (e.g. `framer-motion` or `react-spring`); no reason to write your own easing functions.

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { cancelOrder, createOrder, listOrders } from '../../api/orders'
@@ -238,6 +238,10 @@ function OwnShipOrders({
         queryKey: ['orders', ship.id],
         queryFn: ({ signal }) => listOrders(ship.id, signal),
         refetchInterval: ORDERS_POLL_MS,
+        // Keep the previous list visible during the 5 s poll. Without this the
+        // panel flashes empty for one render every cycle while react-query
+        // swaps in the next result.
+        placeholderData: keepPreviousData,
     })
 
     const cancel = useMutation({
@@ -262,9 +266,22 @@ function OwnShipOrders({
 
     return (
         <div className="orders-view">
-            {isLoading && <p>Loading orders…</p>}
-            {orders && orders.length === 0 && (
-                <p className="orders-empty">Queue is empty. Add an order below.</p>
+            {isLoading && (
+                <ul className="orders-list orders-list--skeleton" aria-busy="true" aria-label="Loading orders">
+                    {[0, 1, 2].map((i) => (
+                        <li key={i} className="order-row order-row--skeleton" aria-hidden="true">
+                            <span className="order-skeleton order-skeleton--kind" />
+                            <span className="order-skeleton order-skeleton--status" />
+                            <span className="order-skeleton order-skeleton--params" />
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {!isLoading && orders && orders.length === 0 && (
+                <p className="orders-empty">
+                    No orders queued. Use <strong>+ Add Order</strong> below to <em>Move</em> or
+                    <em> Land</em>.
+                </p>
             )}
             {orders && orders.length > 0 && (
                 <ul className="orders-list">

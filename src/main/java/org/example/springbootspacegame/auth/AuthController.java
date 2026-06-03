@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -110,5 +111,22 @@ public class AuthController {
     @GetMapping("/me")
     public MeResponse me() {
         return authService.getCurrentUser();
+    }
+
+    /**
+     * Hard-delete the currently authenticated user (GDPR / data-hygiene).
+     * Cascades to ships + ship_orders via FK. Once the row is gone the
+     * session ceases to map to anything — invalidate it before returning so
+     * the next request from this browser is plainly logged out.
+     */
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteMe(HttpServletRequest httpRequest) {
+        authService.deleteCurrentUser();
+        HttpSession session = httpRequest.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+        SecurityContextHolder.clearContext();
+        return ResponseEntity.noContent().build();
     }
 }

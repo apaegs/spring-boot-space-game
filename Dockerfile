@@ -8,7 +8,14 @@
 # Stage 2 is the slim runtime: just a JRE and the jar.
 
 # --- Stage 1: build ------------------------------------------------------
-FROM eclipse-temurin:25-jdk AS builder
+# Base images pinned by digest (sha256) to match the supply-chain stance of
+# .github/workflows/ci.yml (which pins every Action by commit SHA). A floating
+# `:25-jdk` tag can be re-targeted by the upstream maintainer, so the same
+# Dockerfile would produce a different image content-hash later. Dependabot
+# (see .github/dependabot.yml, `docker` ecosystem) keeps these digests fresh.
+# When updating manually: `docker buildx imagetools inspect eclipse-temurin:25-jdk`
+# prints the multi-arch index digest at the top — use that, not a per-platform digest.
+FROM eclipse-temurin:25-jdk@sha256:c2b7ea21649875fb9052237ac4e3cd4ef63968a2a389a0a1b1a72a5e53e5c93f AS builder
 
 WORKDIR /build
 
@@ -40,7 +47,7 @@ RUN ./mvnw -B -q clean package -DskipTests
 
 
 # --- Stage 2: runtime ----------------------------------------------------
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre@sha256:04262e8782d6b034ee5d7c1c5d4e8938fcf2063a76b4bfcd84e5d994d09c27bc
 
 WORKDIR /app
 
