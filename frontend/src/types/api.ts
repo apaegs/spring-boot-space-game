@@ -12,19 +12,22 @@
  * over there, the corresponding type here MUST be updated in the same PR —
  * nothing binds them at build time:
  *
- *   MeResponse         → auth/MeResponse.java
- *   RegisterRequest    → auth/RegisterRequest.java
- *   LoginRequest       → auth/LoginRequest.java
- *   ShipStatus         → ship/ShipStatus.java
- *   ShipDto            → ship/ShipDto.java
- *   CreateShipRequest  → ship/CreateShipRequest.java
- *   PublicShipDto      → ship/PublicShipDto.java
- *   WorldDto           → world/WorldDto.java
- *   PlanetDto          → planet/PlanetDto.java
- *   OrderKind          → order/OrderKind.java
- *   OrderStatus        → order/OrderStatus.java
- *   ShipOrderDto       → order/ShipOrderDto.java
- *   CreateOrderRequest → order/CreateOrderRequest.java
+ *   MeResponse           → auth/MeResponse.java
+ *   RegisterRequest      → auth/RegisterRequest.java
+ *   LoginRequest         → auth/LoginRequest.java
+ *   ShipStatus           → ship/ShipStatus.java
+ *   ShipDto              → ship/ShipDto.java
+ *   CreateShipRequest    → ship/CreateShipRequest.java
+ *   PublicShipDto        → ship/PublicShipDto.java
+ *   ShipType / ShipCargo → ship/ShipType.java, ship/ShipCargo.java
+ *   WorldDto             → world/WorldDto.java
+ *   CelestialBodyDto     → body/CelestialBodyDto.java
+ *   CelestialBodyKind    → body/CelestialBodyKind.java
+ *   ResourceKind         → resource/ResourceKind.java
+ *   OrderKind            → order/OrderKind.java
+ *   OrderStatus          → order/OrderStatus.java
+ *   ShipOrderDto         → order/ShipOrderDto.java
+ *   CreateOrderRequest   → order/CreateOrderRequest.java
  *
  * Paths are relative to src/main/java/org/example/springbootspacegame/.
  */
@@ -35,6 +38,8 @@ export type MeResponse = {
     id: string
     username: string
     email: string
+    /** In-game currency on the user. Earned by SELL (PR 2). */
+    credits: number
     createdAt: string
 }
 
@@ -49,15 +54,26 @@ export type LoginRequest = {
     password: string
 }
 
+// --- resources ---
+
+/**
+ * Catalog of resources a ship can carry and a body can yield or buy.
+ * Mirrors `resource/ResourceKind.java`. New kinds = add a literal here AND
+ * a Java enum value in the same PR.
+ */
+export type ResourceKind = 'IRON' | 'WATER' | 'HYDROGEN' | 'HELIUM' | 'RARE_METAL'
+
 // --- ship ---
 
-export type ShipStatus = 'IDLE' | 'MOVING' | 'LANDED'
+export type ShipStatus = 'IDLE' | 'MOVING' | 'LANDED' | 'ORBITING'
 
 export type ShipDto = {
     id: string
     name: string
     x: number
     y: number
+    /** FK into the ship types catalog. Stats (cargo cap, extract rate) live on the type, not the ship. */
+    shipTypeId: string
     createdAt: string
     status: ShipStatus
 }
@@ -83,6 +99,24 @@ export type PublicShipDto = {
     y: number
 }
 
+/**
+ * Catalog entry for a ship type — cargo capacity, extraction rate, etc. v1 has
+ * exactly one row ({@code MOTHERSHIP}); future types are new rows.
+ */
+export type ShipTypeDto = {
+    id: string
+    code: string
+    name: string
+    cargoCapacity: number
+    extractRate: number
+}
+
+/** One row of a ship's cargo hold ({@code (shipId, resourceKind, qty)} composite key). */
+export type ShipCargoDto = {
+    resourceKind: ResourceKind
+    qty: number
+}
+
 // --- world ---
 
 export type WorldDto = {
@@ -90,14 +124,42 @@ export type WorldDto = {
     lastTickAt: string
 }
 
-// --- planets ---
+// --- celestial bodies ---
 
-export type PlanetDto = {
+/**
+ * Body taxonomy. {@code STAR} is decorative — no extraction, no LAND target.
+ * {@code GAS_GIANT} ships will end up in {@code ORBITING} rather than
+ * {@code LANDED} after the PR 2 LAND handler update.
+ */
+export type CelestialBodyKind =
+    | 'ROCKY_PLANET'
+    | 'LAVA_PLANET'
+    | 'ICE_PLANET'
+    | 'GAS_GIANT'
+    | 'ASTEROID'
+    | 'STAR'
+
+/** Per-resource reserve on a body. */
+export type BodyResourceReserve = {
+    kind: ResourceKind
+    reserve: number
+}
+
+/** Per-resource buy price on a body (only present for resources the body buys). */
+export type BodyResourceBuyPrice = {
+    kind: ResourceKind
+    pricePerUnit: number
+}
+
+export type CelestialBodyDto = {
     id: string
     x: number
     y: number
     name: string
     description: string | null
+    kind: CelestialBodyKind
+    reserves: BodyResourceReserve[]
+    buyPrices: BodyResourceBuyPrice[]
 }
 
 // --- orders ---

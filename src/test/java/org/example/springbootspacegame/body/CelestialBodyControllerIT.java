@@ -1,4 +1,4 @@
-package org.example.springbootspacegame.planet;
+package org.example.springbootspacegame.body;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springbootspacegame.IntegrationTest;
@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @IntegrationTest
-class PlanetControllerIT {
+class CelestialBodyControllerIT {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
@@ -37,21 +37,38 @@ class PlanetControllerIT {
     }
 
     @Test
-    void listReturnsSeededPlanets() throws Exception {
+    void listReturnsSeededBodies() throws Exception {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "kira", "kira@enterprise.example", "deep-space-nine");
 
-        // V5 seeds 6 planets; we don't pin the exact count (future seeds will
-        // grow this list) but Earth at the spawn tile is the load-bearing one.
-        mockMvc.perform(get("/api/planets").session(session))
+        // V9 seeds 40 bodies across the kind taxonomy; we don't pin the exact
+        // count (future seeds may grow this) but Earth at the spawn tile is the
+        // load-bearing one, and the taxonomy needs to be represented.
+        mockMvc.perform(get("/api/bodies").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()", greaterThanOrEqualTo(6)))
+                .andExpect(jsonPath("$.length()", greaterThanOrEqualTo(40)))
                 .andExpect(jsonPath("$[*].name", hasItem("Earth")))
-                .andExpect(jsonPath("$[*].name", hasItem("Mars")));
+                .andExpect(jsonPath("$[*].name", hasItem("Jupiter")))
+                .andExpect(jsonPath("$[*].kind", hasItem("ROCKY_PLANET")))
+                .andExpect(jsonPath("$[*].kind", hasItem("GAS_GIANT")))
+                .andExpect(jsonPath("$[*].kind", hasItem("ASTEROID")))
+                .andExpect(jsonPath("$[*].kind", hasItem("STAR")));
+    }
+
+    @Test
+    void earthIncludesReservesAndBuyPrices() throws Exception {
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "sisko", "sisko@enterprise.example", "captain-of-the-defiant");
+
+        // Earth is seeded as an industrial buyer with reserves of IRON and WATER.
+        // Pinning specific entries to verify the nested-list shape works.
+        mockMvc.perform(get("/api/bodies").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.name=='Earth')].reserves[*].kind", hasItem("IRON")))
+                .andExpect(jsonPath("$[?(@.name=='Earth')].buyPrices[*].kind", hasItem("IRON")));
     }
 
     @Test
     void listRequiresAuth() throws Exception {
-        mockMvc.perform(get("/api/planets"))
+        mockMvc.perform(get("/api/bodies"))
                 .andExpect(status().isUnauthorized());
     }
 }

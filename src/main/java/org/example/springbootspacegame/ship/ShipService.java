@@ -6,7 +6,6 @@ import org.example.springbootspacegame.auth.UserRepository;
 import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderStatus;
 import org.example.springbootspacegame.order.ShipOrderRepository;
-import org.example.springbootspacegame.planet.PlanetRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,7 +31,6 @@ public class ShipService {
     private final ShipRepository shipRepository;
     private final UserRepository userRepository;
     private final ShipOrderRepository shipOrderRepository;
-    private final PlanetRepository planetRepository;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
@@ -42,7 +40,7 @@ public class ShipService {
      */
     @Transactional
     public Ship createForNewUser(UUID userId, String username) {
-        Ship ship = new Ship(userId, autoName(username, 0), SPAWN_X, SPAWN_Y);
+        Ship ship = new Ship(userId, autoName(username, 0), SPAWN_X, SPAWN_Y, ShipType.MOTHERSHIP_ID);
         return shipRepository.save(ship);
     }
 
@@ -66,7 +64,7 @@ public class ShipService {
                 ? desired
                 : autoName(user.getUsername(), shipRepository.countByUserId(userId));
 
-        Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y);
+        Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y, ShipType.MOTHERSHIP_ID);
         try {
             Ship saved = shipRepository.saveAndFlush(ship);
             return ShipDto.from(saved, deriveStatus(saved));
@@ -139,7 +137,7 @@ public class ShipService {
      * </ul>
      *
      * <p>LANDED is intentionally order-history-based, not coordinate-based.
-     * A ship that simply stops on a planet tile without issuing a LAND order
+     * A ship that simply stops on a body tile without issuing a LAND order
      * is IDLE — matching the domain rule that landing is an explicit action.
      *
      * <p>Must be called within an active transaction so the repository calls

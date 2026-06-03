@@ -268,9 +268,9 @@ class ShipControllerIT {
     }
 
     @Test
-    void shipOffPlanetWithNoOrdersIsIdle() throws Exception {
+    void shipOffBodyWithNoOrdersIsIdle() throws Exception {
         // Move the ship one tile off Earth (50,50) → (51,50), then confirm
-        // there are no pending orders and status is IDLE (not on a planet).
+        // there are no pending orders and status is IDLE (not on a body).
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-idle", "status-idle@example.com", "password-idle1");
         String shipId = readFirstShipId(session);
 
@@ -280,7 +280,7 @@ class ShipControllerIT {
                                 Map.of("kind", "MOVE", "params", Map.of("x", 51, "y", 50)))))
                 .andExpect(status().isCreated());
 
-        tickService.advanceTick(); // MOVE completes — ship at (51,50), no planet there
+        tickService.advanceTick(); // MOVE completes — ship at (51,50), no body there
 
         mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
@@ -288,8 +288,8 @@ class ShipControllerIT {
     }
 
     @Test
-    void shipLandedOnPlanetIsLanded() throws Exception {
-        // Spawn is at (50,50) where Earth is seeded (V5). Queue LAND, fire one
+    void shipLandedOnBodyIsLanded() throws Exception {
+        // Spawn is at (50,50) where Earth is seeded (V9). Queue LAND, fire one
         // tick so the order completes, then check status = LANDED.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-land", "status-land@example.com", "password-land1");
         String shipId = readFirstShipId(session);

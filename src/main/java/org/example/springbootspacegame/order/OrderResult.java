@@ -16,7 +16,7 @@ public sealed interface OrderResult {
     record Completed() implements OrderResult {}
 
     /**
-     * The order can't be fulfilled (e.g. LAND issued while not on a planet tile).
+     * The order can't be fulfilled (e.g. LAND issued while not on a body tile).
      * Mark CANCELLED with the reason in the log so the player has *something* to read.
      */
     record Cancelled(String reason) implements OrderResult {}

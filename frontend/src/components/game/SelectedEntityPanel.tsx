@@ -4,8 +4,8 @@ import { ApiError } from '../../api/client'
 import { cancelOrder, createOrder, listOrders } from '../../api/orders'
 import { renameShip } from '../../api/ship'
 import type {
+    CelestialBodyDto,
     OrderKind,
-    PlanetDto,
     PublicShipDto,
     ShipDto,
     ShipOrderDto,
@@ -19,7 +19,8 @@ import type {
  *   <li><b>Foreign ship</b>: Info only. No Orders tab — you can't queue
  *       actions for ships you don't own. Position + name are public per
  *       {@code PublicShipDto}.</li>
- *   <li><b>Planet</b>: name, position, and the seeded description.</li>
+ *   <li><b>Body</b>: name, position, and the seeded description. PR 3 will
+ *       grow this to render reserves + buy prices per body kind.</li>
  *   <li><b>None</b>: a soft placeholder so the panel doesn't just vanish.
  *       Hiding it was the alternative, but a stable layout reads better
  *       than a jumping sidebar.</li>
@@ -32,7 +33,7 @@ import type {
 export type SelectedEntityPanelProps =
     | { kind: 'ownShip'; ship: ShipDto; currentTick: number | undefined; onPickMoveTarget: () => void }
     | { kind: 'foreignShip'; ship: PublicShipDto }
-    | { kind: 'planet'; planet: PlanetDto }
+    | { kind: 'body'; body: CelestialBodyDto }
     | { kind: 'none' }
 
 const ORDERS_POLL_MS = 5000
@@ -42,7 +43,7 @@ export function SelectedEntityPanel(props: SelectedEntityPanelProps) {
         return (
             <section className="selected-ship-panel selected-ship-panel--empty">
                 <p className="selected-ship-panel__empty">
-                    Click a ship or planet on the map to see details.
+                    Click a ship or body on the map to see details.
                 </p>
             </section>
         )
@@ -65,22 +66,24 @@ export function SelectedEntityPanel(props: SelectedEntityPanelProps) {
         )
     }
 
-    if (props.kind === 'planet') {
+    if (props.kind === 'body') {
+        // PR 3 will render kind-specific visuals + the reserves/buyPrices lists.
+        // For now we keep the panel minimal so the rename lands cleanly.
         return (
             <section className="selected-ship-panel">
                 <header className="selected-ship-panel__header">
-                    <h2>{props.planet.name}</h2>
-                    <span className="selected-ship-panel__badge">planet</span>
+                    <h2>{props.body.name}</h2>
+                    <span className="selected-ship-panel__badge">{props.body.kind.toLowerCase().replace('_', ' ')}</span>
                 </header>
                 <dl className="ship-info">
                     <dt>Position</dt>
                     <dd>
-                        ({props.planet.x}, {props.planet.y})
+                        ({props.body.x}, {props.body.y})
                     </dd>
-                    {props.planet.description && (
+                    {props.body.description && (
                         <>
                             <dt>About</dt>
-                            <dd>{props.planet.description}</dd>
+                            <dd>{props.body.description}</dd>
                         </>
                     )}
                 </dl>

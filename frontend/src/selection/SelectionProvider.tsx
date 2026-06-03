@@ -4,7 +4,7 @@ import { listMyShips } from '../api/ship'
 import { SelectionContext, type Selection } from './SelectionContext'
 
 /**
- * Holds the player's current selection (a ship, a planet, or nothing) for the
+ * Holds the player's current selection (a ship, a celestial body, or nothing) for the
  * whole game view. Wraps everything under {@code /} so the right sidebar and
  * the map both react to the same state without prop-drilling.
  *

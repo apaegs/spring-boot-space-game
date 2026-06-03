@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { ApiError } from '../api/client'
 import { createOrder } from '../api/orders'
-import { listPlanets } from '../api/planets'
+import { listBodies } from '../api/bodies'
 import { listMyShips } from '../api/ship'
 import { getWorld, listWorldShips } from '../api/world'
 import { GameHeader } from '../components/game/GameHeader'
@@ -15,7 +15,7 @@ import { WorldMapView } from '../components/WorldMapView'
 import type { ShipOnMap } from '../pixi/WorldMap'
 import type { Selection } from '../selection/SelectionContext'
 import { useSelection } from '../selection/SelectionContext'
-import type { PlanetDto, PublicShipDto, ShipDto } from '../types/api'
+import type { CelestialBodyDto, PublicShipDto, ShipDto } from '../types/api'
 
 const POLL_MS = 5000
 
@@ -24,7 +24,7 @@ const POLL_MS = 5000
  *   - Own-ship list polling (drives sidebar + own marker colors).
  *   - World-ship list polling (drives foreign ship rendering on the map).
  *   - World/tick polling (drives header counter and gameplay heartbeat).
- *   - Planet list (static — staleTime: Infinity).
+ *   - Body list (static — staleTime: Infinity).
  *   - Action-mode state and the map-click handler that closes the loop
  *     when the player picks a target.
  *
@@ -60,9 +60,9 @@ export function Game() {
         refetchInterval: POLL_MS,
     })
 
-    const planetsQuery = useQuery({
-        queryKey: ['planets'],
-        queryFn: ({ signal }) => listPlanets(signal),
+    const bodiesQuery = useQuery({
+        queryKey: ['bodies'],
+        queryFn: ({ signal }) => listBodies(signal),
         staleTime: Infinity,
     })
 
@@ -71,7 +71,7 @@ export function Game() {
     // `?? []` would mint a fresh array each render and bust the memo.
     const ships = useMemo(() => shipsQuery.data ?? [], [shipsQuery.data])
     const world = worldQuery.data
-    const planets = planetsQuery.data ?? []
+    const bodies = bodiesQuery.data ?? []
     const selectedShip = ships.find((s) => s.id === selectedShipId) ?? null
 
     // Build the on-map ship list by merging the two ship sources. Own ships
@@ -137,7 +137,7 @@ export function Game() {
         setSelection(null)
     }
 
-    // Ship and planet clicks only select in normal mode. WorldMap stops
+    // Ship and body clicks only select in normal mode. WorldMap stops
     // firing these callbacks in targeting mode (markers become transparent
     // to pointer events), so we don't need a runtime guard here — but the
     // defensive check costs nothing and keeps intent explicit. Deselection
@@ -148,9 +148,9 @@ export function Game() {
         setSelection({ kind: 'ship', id: ship.id })
     }
 
-    const onPlanetClick = (planetId: string) => {
+    const onBodyClick = (bodyId: string) => {
         if (isTargetingActive) return
-        setSelection({ kind: 'planet', id: planetId })
+        setSelection({ kind: 'body', id: bodyId })
     }
 
     const startMoveTargeting = () => {
@@ -162,13 +162,13 @@ export function Game() {
     // hiccup just shows an empty map + "Loading…" sidebar forever — the player
     // can't tell whether it's a slow first load or a real problem.
     const queryError =
-        shipsQuery.error ?? worldQuery.error ?? worldShipsQuery.error ?? planetsQuery.error
+        shipsQuery.error ?? worldQuery.error ?? worldShipsQuery.error ?? bodiesQuery.error
 
     const retryAll = () => {
         void shipsQuery.refetch()
         void worldShipsQuery.refetch()
         void worldQuery.refetch()
-        void planetsQuery.refetch()
+        void bodiesQuery.refetch()
     }
 
     return (
@@ -187,13 +187,13 @@ export function Game() {
                 )}
 
                 <WorldMapView
-                    planets={planets}
+                    bodies={bodies}
                     ships={shipsOnMap}
                     selection={selection}
                     isTargeting={isTargetingActive}
                     onTileClick={onTileClick}
                     onShipClick={onShipClick}
-                    onPlanetClick={(p) => onPlanetClick(p.id)}
+                    onBodyClick={(p) => onBodyClick(p.id)}
                     onRightClick={onRightClick}
                 />
 
@@ -221,7 +221,7 @@ export function Game() {
                         selection,
                         ownShips: ships,
                         worldShips: worldShipsQuery.data,
-                        planets,
+                        bodies,
                         currentTick: world?.currentTick,
                         onPickMoveTarget: startMoveTargeting,
                     })}
@@ -238,18 +238,18 @@ export function Game() {
  * <p>Foreign-ship lookups try the world-ships query first; if that hasn't
  * loaded yet (or the ship has vanished between renders) we fall through
  * to the empty state rather than rendering a stale row. Same fallback for
- * planets and own ships — selection ids are opaque, the entities can
+ * bodies and own ships — selection ids are opaque, the entities can
  * legitimately disappear (deletion, race with a refetch).
  */
 function resolveSelectedEntity(input: {
     selection: Selection
     ownShips: ShipDto[]
     worldShips: PublicShipDto[] | undefined
-    planets: PlanetDto[]
+    bodies: CelestialBodyDto[]
     currentTick: number | undefined
     onPickMoveTarget: () => void
 }): SelectedEntityPanelProps {
-    const { selection, ownShips, worldShips, planets, currentTick, onPickMoveTarget } = input
+    const { selection, ownShips, worldShips, bodies, currentTick, onPickMoveTarget } = input
     if (!selection) return { kind: 'none' }
 
     if (selection.kind === 'ship') {
@@ -260,6 +260,6 @@ function resolveSelectedEntity(input: {
         return { kind: 'none' }
     }
 
-    const planet = planets.find((p) => p.id === selection.id)
-    return planet ? { kind: 'planet', planet } : { kind: 'none' }
+    const body = bodies.find((p) => p.id === selection.id)
+    return body ? { kind: 'body', body } : { kind: 'none' }
 }

@@ -29,26 +29,28 @@ WorldState (singleton)              # current_tick, last_tick_at
 
 Authentication identity — the person behind the account.
 
-| Field           | Type         | Notes                       |
-|-----------------|--------------|-----------------------------|
-| id              | UUID         | PK                          |
-| username        | VARCHAR(32)  | unique, case-insensitive    |
-| email           | VARCHAR(255) | unique                      |
-| password_hash   | VARCHAR(255) | BCrypt                      |
-| created_at      | TIMESTAMPTZ  | default `now()`             |
+| Field           | Type         | Notes                                                                  |
+|-----------------|--------------|------------------------------------------------------------------------|
+| id              | UUID         | PK                                                                     |
+| username        | VARCHAR(32)  | unique, case-insensitive                                               |
+| email           | VARCHAR(255) | unique                                                                 |
+| password_hash   | VARCHAR(255) | BCrypt                                                                 |
+| credits         | BIGINT       | in-game currency; earned by SELL handler. Starts at 0. Added in V8.    |
+| created_at      | TIMESTAMPTZ  | default `now()`                                                        |
 
 ### Ship
 
 A player-controlled vessel. **A User can have any number of Ships** (the auto-created mothership at registration plus any created via `POST /api/ships`). Historic note: v1 originally constrained this to exactly one; the constraint was lifted in #32 when the multi-ship UI shipped.
 
-| Field           | Type         | Notes                                                   |
-|-----------------|--------------|---------------------------------------------------------|
-| id              | UUID         | PK                                                      |
-| user_id         | UUID         | FK → user.id (not unique — many ships per user)         |
-| name            | VARCHAR(64)  | player-chosen or generated                              |
-| x               | INT          | 0 ≤ x < 100 (see `WorldConstants.GRID_SIZE`)            |
-| y               | INT          | 0 ≤ y < 100 (see `WorldConstants.GRID_SIZE`)            |
-| created_at      | TIMESTAMPTZ  | default `now()`                                         |
+| Field           | Type         | Notes                                                                  |
+|-----------------|--------------|------------------------------------------------------------------------|
+| id              | UUID         | PK                                                                     |
+| user_id         | UUID         | FK → user.id (not unique — many ships per user)                        |
+| name            | VARCHAR(64)  | player-chosen or generated                                             |
+| x               | INT          | 0 ≤ x < 100 (see `WorldConstants.GRID_SIZE`)                           |
+| y               | INT          | 0 ≤ y < 100 (see `WorldConstants.GRID_SIZE`)                           |
+| ship_type_id    | UUID         | FK → ship_types.id. v1 always references `MOTHERSHIP`. Added in V8.    |
+| created_at      | TIMESTAMPTZ  | default `now()`                                                        |
 
 **Ownership**: every ship-scoped *action* endpoint (`GET /api/ships/{id}/...`, `POST /api/ships/{id}/orders`, etc.) checks that the `{shipId}` belongs to the caller via `ShipService.requireOwnedShip`. A non-owned ship ID 404s — deliberately indistinguishable from "ship doesn't exist" so the API doesn't leak other users' ship IDs through the action surface.
 
@@ -84,21 +86,92 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 | Kind  | Params                  | Behavior                                                                 |
 |-------|-------------------------|--------------------------------------------------------------------------|
 | MOVE  | `{ "x": int, "y": int }` | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival. |
-| LAND  | `{}`                    | Validate that ship is on a planet tile. If yes, complete in one tick. If no, fail and CANCEL with reason. |
+| LAND  | `{}`                    | Validate that ship is on a celestial body's tile. If yes, complete in one tick. If no, fail and CANCEL with reason. |
 
-### Planet
+PR 2 adds `TAKE_OFF`, `EXTRACT`, and `SELL` — see issue #46's v3 design comment.
 
-Pre-seeded point of interest on the map. Only meaningful target for the LAND order in v1.
+### CelestialBody
 
-| Field        | Type         | Notes                                     |
-|--------------|--------------|-------------------------------------------|
-| id           | UUID         | PK                                        |
-| x            | INT          | unique together with y, `0 ≤ x < 100`     |
-| y            | INT          | `0 ≤ y < 100`                             |
-| name         | VARCHAR(64)  | display name                              |
-| description  | TEXT         | flavor text                               |
+Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and stars. Replaces the v1 `Planet` entity (table renamed in V8). The only meaningful target for the LAND order.
 
-Seeded in `V5__create_planets.sql`. The v1 seed includes Earth at `(50, 50)` (the spawn tile) and a handful of others scattered across the grid — enough to give early players concrete targets to MOVE/LAND on.
+| Field        | Type         | Notes                                                       |
+|--------------|--------------|-------------------------------------------------------------|
+| id           | UUID         | PK                                                          |
+| x            | INT          | unique together with y, `0 ≤ x < 100`                       |
+| y            | INT          | `0 ≤ y < 100`                                               |
+| name         | VARCHAR(64)  | display name                                                |
+| description  | TEXT         | flavor text                                                 |
+| kind         | VARCHAR(32)  | `CelestialBodyKind`; one of the taxonomy below. Added in V8.|
+
+**Kind taxonomy** (`CelestialBodyKind`):
+
+| Kind           | Arrival state | Notes                                                                       |
+|----------------|---------------|-----------------------------------------------------------------------------|
+| `ROCKY_PLANET` | LANDED        | Common. Iron-rich, trace water and rare metal.                              |
+| `LAVA_PLANET`  | LANDED        | Rare. Heavy rare-metal yield.                                               |
+| `ICE_PLANET`   | LANDED        | Water-heavy.                                                                |
+| `GAS_GIANT`    | ORBITING      | Can't physically land; LAND resolves to ORBITING (PR 2). Hydrogen + helium. |
+| `ASTEROID`     | LANDED        | Many on the map. Mixed iron/water/rare-metal trace.                         |
+| `STAR`         | _neither_     | Decorative + nav landmark. No extraction, no LAND target.                   |
+
+Seeded in `V9__seed_initial_map.sql` — ~40 bodies across the kind taxonomy. The seed replaces the original V5 6-planet seed entirely. Earth still sits at `(50, 50)` (the spawn tile) so a fresh player's mothership starts on their home body.
+
+### BodyResource
+
+Per-body reserve of a single resource. Composite PK `(body_id, resource_kind)`. The EXTRACT handler (PR 2) decrements `reserve` within the tick transaction. Absence of a row means the body lacks that resource at all — distinct from `reserve = 0` ("depleted but used to have").
+
+| Field         | Type         | Notes                                              |
+|---------------|--------------|----------------------------------------------------|
+| body_id       | UUID         | FK → celestial_bodies.id, `ON DELETE CASCADE`      |
+| resource_kind | VARCHAR(16)  | `ResourceKind` enum value                          |
+| reserve       | INT          | `CHECK (reserve >= 0)`                             |
+
+### BodyBuyPrice
+
+Per-body buy price for a single resource. Composite PK `(body_id, resource_kind)`. Absence of a row = body doesn't buy this resource (the SELL handler in PR 2 will cancel with that reason).
+
+| Field          | Type         | Notes                                              |
+|----------------|--------------|----------------------------------------------------|
+| body_id        | UUID         | FK → celestial_bodies.id, `ON DELETE CASCADE`      |
+| resource_kind  | VARCHAR(16)  | `ResourceKind` enum value                          |
+| price_per_unit | INT          | `CHECK (price_per_unit > 0)`                       |
+
+### ResourceKind
+
+Application-layer enum (not a DB table) catalogue of resources a ship can carry and a body can yield or buy. Each kind declares the ship state required to extract it.
+
+| Kind         | Extraction state | Source examples       | Sink examples              |
+|--------------|------------------|-----------------------|----------------------------|
+| `IRON`       | LANDED           | Rocky planets, asteroids | Industrial bodies       |
+| `WATER`      | LANDED           | Ice planets, asteroids   | Habitat bodies          |
+| `HYDROGEN`   | ORBITING         | Gas giants               | Habitat/fuel buyers     |
+| `HELIUM`     | ORBITING         | Gas giants               | Tech buyers             |
+| `RARE_METAL` | LANDED           | Lava planets, asteroids  | Tech buyers             |
+
+### ShipType
+
+Catalog of ship types. Stats per type (cargo capacity, extraction rate, future: speed/fuel/hull) live here rather than on each ship, so adding a new type is a row, not a code change.
+
+| Field          | Type         | Notes                                            |
+|----------------|--------------|--------------------------------------------------|
+| id             | UUID         | PK                                               |
+| code           | VARCHAR(32)  | unique catalog code (e.g. `MOTHERSHIP`)          |
+| name           | VARCHAR(64)  | display name                                     |
+| cargo_capacity | INT          | total cargo cap across all resources             |
+| extract_rate   | INT          | units per tick the EXTRACT handler can pull      |
+| created_at     | TIMESTAMPTZ  | default `now()`                                  |
+
+v1 seed: one row, `MOTHERSHIP` (`cargo_capacity = 500`, `extract_rate = 10`) with the deterministic UUID `00000000-0000-0000-0000-000000000001` so `ships.ship_type_id` can backfill against it in V8.
+
+### ShipCargo
+
+Per-ship per-resource cargo row. Composite PK `(ship_id, resource_kind)`. The EXTRACT handler (PR 2) upserts rows; SELL removes them. Cargo cap is enforced against `SUM(qty)` for the ship — total units across all resources combined.
+
+| Field         | Type         | Notes                                              |
+|---------------|--------------|----------------------------------------------------|
+| ship_id       | UUID         | FK → ships.id, `ON DELETE CASCADE`                 |
+| resource_kind | VARCHAR(16)  | `ResourceKind` enum value                          |
+| qty           | INT          | `CHECK (qty >= 0)`                                 |
 
 ### WorldState
 
@@ -110,7 +183,7 @@ Singleton table. Only ever one row.
 | current_tick   | BIGINT       | increments by 1 per tick                 |
 | last_tick_at   | TIMESTAMPTZ  | most recently processed tick             |
 
-**Grid size**: fixed at 100×100 forever in v1 — the single source of truth is `WorldConstants.GRID_SIZE` (see issue #29). The CHECK constraints on `ships(x,y)` and `planets(x,y)` use the same literal at the schema layer. Per-instance grid sizing would require moving the value back onto `world_state` and replacing the CHECK constraints with triggers; not planned.
+**Grid size**: fixed at 100×100 forever in v1 — the single source of truth is `WorldConstants.GRID_SIZE` (see issue #29). The CHECK constraints on `ships(x,y)` and `celestial_bodies(x,y)` use the same literal at the schema layer. Per-instance grid sizing would require moving the value back onto `world_state` and replacing the CHECK constraints with triggers; not planned.
 
 **Tick interval**: configured via `game.tick.interval-ms` in `application.properties`. v1 value is `3000` (3 s) — the same number for every deployment and every player, since tick pace is a game-design choice, not a per-environment tuning knob.
 
@@ -126,13 +199,14 @@ With justification — so we know *why* something was deferred, not just *that* 
 |--------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------|
 | **Crew**                             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                           |
 | **Ship speed**                       | All ships move 1 tile/tick in v1                                                  | New `speed` column on `ship`; MOVE handler loops `speed` times  |
-| **Ship types & capabilities**        | One ship class in v1; later "scout can SCAN, miner can MINE, freighter cannot"    | Add `ship_type` (FK or enum) + per-type allowed `OrderHandler` list |
-| **More order kinds** (WAIT/SCAN/MINE/TRADE/ATTACK/…) | Schema + dispatcher are ready; just need handler classes | New `OrderHandler` impl per kind + entry in the order-kind whitelist |
+| **Ship type stats beyond cargo/extract** | One ship class (`MOTHERSHIP`) in v1; speed/fuel/hull land as new columns on `ship_types` when needed | Add columns to `ship_types` + handlers that read them          |
+| **`TAKE_OFF` / `EXTRACT` / `SELL` order kinds** | Catalog + tables are in V8 (PR 1); handlers + auto-prerequisite middleware land in PR 2 | See umbrella issue #80 PR 2.                       |
+| **More order kinds** (WAIT/SCAN/ATTACK/…) | Schema + dispatcher are ready; just need handler classes | New `OrderHandler` impl per kind + entry in the order-kind whitelist |
 | **Completed-order cleanup**          | History stays in `ship_orders` forever in v1; not enough rows to matter           | Scheduled archive job, or partitioning by `completed_at`        |
-| **Resources, cargo**                 | Not part of the v1 loop                                                           | Its own design issue                                            |
+| **Procgen map**                      | V9 hand-seeds ~40 bodies for v1; procgen produces the same body+resource model from a seed source | See #47 — same model, different seed source.        |
 | **Star** (entity)                    | Stars are pure UI decoration until they have gameplay function                    | Add a table when they become interactive                        |
 | **Tile table**                       | 10,000 empty cells aren't worth storing                                           | Created if/when tiles get attributes (terrain, etc.)            |
-| **Sprite art**                       | v1 renders geometric primitives (cyan triangle for ship, amber circles for planets) so the map works without an art pass | Native sprite size will be **16×16**, rendered at integer multiples (no downscale — pixel art breaks). Whole 100×100 grid at native = 1600×1600 canvas, so when sprites arrive the map switches from "fit everything" to a camera that follows the ship. See `WorldMap.ts` — swap `Graphics` for `Sprite.from(...)`. |
+| **Sprite art**                       | v1 renders geometric primitives (cyan triangle for ship, amber circles for bodies) so the map works without an art pass | Native sprite size will be **16×16**, rendered at integer multiples (no downscale — pixel art breaks). Whole 100×100 grid at native = 1600×1600 canvas, so when sprites arrive the map switches from "fit everything" to a camera that follows the ship. See `WorldMap.ts` — swap `Graphics` for `Sprite.from(...)`. |
 
 ## Forward-compat
 
@@ -151,6 +225,6 @@ Originally raised in issue #2; some are now resolved by later issues.
 
 1. ~~4- or 8-direction movement?~~ **Resolved**: 8-direction (Chebyshev). See ShipOrder.MOVE.
 2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11**: explicit LAND order, queued alongside MOVE. Lets players script "fly to Mars, then land" as a single chain.
-3. ~~Number of planets and placement?~~ **Resolved in #11**: 6 hand-placed planets in `V5__seed_planets.sql`.
+3. ~~Number of planets and placement?~~ **Resolved in #46 + PR 1 of #80**: 40 hand-placed celestial bodies across the kind taxonomy in `V9__seed_initial_map.sql` (replaces the original V5 6-planet seed).
 4. Ship name: player-chosen or generated? Currently generated (`"<username>'s ship"`). Player-chosen deferred until there's a UI to choose.
 5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*

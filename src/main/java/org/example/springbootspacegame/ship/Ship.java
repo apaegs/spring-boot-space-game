@@ -46,14 +46,25 @@ public class Ship {
     // destination_x/y removed in V4 — what a ship is currently doing lives in
     // the ship_orders queue, not on the ship row. See DOMAIN.md "ShipOrder".
 
+    /**
+     * FK into {@code ship_types}. v1 ships all spawn as
+     * {@link ShipType#MOTHERSHIP_ID MOTHERSHIP}; future PRs introduce a
+     * type-picker at create time. Plain UUID rather than {@code @ManyToOne}
+     * — readers that need the type's stats (cargo cap, extract rate) go
+     * through {@link ShipTypeRepository}.
+     */
+    @Column(name = "ship_type_id", nullable = false, updatable = false)
+    private UUID shipTypeId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    public Ship(UUID userId, String name, int x, int y) {
+    public Ship(UUID userId, String name, int x, int y, UUID shipTypeId) {
         this.userId = userId;
         this.name = name;
         this.x = x;
         this.y = y;
+        this.shipTypeId = shipTypeId;
     }
 
     @PrePersist

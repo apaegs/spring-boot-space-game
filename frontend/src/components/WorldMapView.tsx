@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { WorldMap, type HoverInfo, type MapSelection, type ShipOnMap } from '../pixi/WorldMap'
-import type { PlanetDto } from '../types/api'
+import type { CelestialBodyDto } from '../types/api'
 
 type WorldMapViewProps = {
-    planets: PlanetDto[]
+    bodies: CelestialBodyDto[]
     /**
      * Every ship to render — caller's own + every other player's, already
      * deduped and tagged with {@code isOwn} by the parent. WorldMap doesn't
@@ -15,7 +15,7 @@ type WorldMapViewProps = {
     /**
      * Whether the map is in targeting mode (Move/Land action awaiting a tile
      * pick). Affects pointer-event capture inside the map: in targeting mode,
-     * ship and planet markers don't swallow clicks — the tile underneath them
+     * ship and body markers don't swallow clicks — the tile underneath them
      * fires {@code onTileClick} instead.
      */
     isTargeting: boolean
@@ -23,8 +23,8 @@ type WorldMapViewProps = {
     onTileClick?: (x: number, y: number) => void
     /** Click on a ship marker. Used by the parent to select that ship. */
     onShipClick?: (ship: ShipOnMap) => void
-    /** Click on a planet marker. Used by the parent to select that planet. */
-    onPlanetClick?: (planet: PlanetDto) => void
+    /** Click on a body marker. Used by the parent to select that body. */
+    onBodyClick?: (body: CelestialBodyDto) => void
     /**
      * Right-mouse-button anywhere on the map. RTS-style "cancel / deselect"
      * — the parent decides what to do (cancel targeting in targeting mode,
@@ -46,7 +46,7 @@ const TOOLTIP_DELAY_MS = 300
  *
  * <p>Props are mirrored into refs so the async {@code map.init()} lifecycle
  * can apply the latest values when it resolves. Without that, the very first
- * payload of planets/ships dropped on the floor: the {@code setPlanets}
+ * payload of bodies/ships dropped on the floor: the {@code setBodies}
  * effect fires while {@code mapRef.current} is still null (init hadn't
  * resolved yet), so the call is a no-op, and there's no re-render to retry it.
  *
@@ -55,13 +55,13 @@ const TOOLTIP_DELAY_MS = 300
  * tooltip div positioned in canvas-relative coordinates.
  */
 export function WorldMapView({
-    planets,
+    bodies,
     ships,
     selection,
     isTargeting,
     onTileClick,
     onShipClick,
-    onPlanetClick,
+    onBodyClick,
     onRightClick,
 }: WorldMapViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null)
@@ -70,17 +70,17 @@ export function WorldMapView({
     // Mirror every prop into a ref so we can read the freshest value from
     // inside the async init().then handler — which may run after this render
     // and any subsequent renders.
-    const planetsRef = useRef(planets)
+    const bodiesRef = useRef(bodies)
     const shipsRef = useRef(ships)
     const selectionRef = useRef(selection)
     const isTargetingRef = useRef(isTargeting)
     const onTileClickRef = useRef(onTileClick)
     const onShipClickRef = useRef(onShipClick)
-    const onPlanetClickRef = useRef(onPlanetClick)
+    const onBodyClickRef = useRef(onBodyClick)
     const onRightClickRef = useRef(onRightClick)
     useEffect(() => {
-        planetsRef.current = planets
-    }, [planets])
+        bodiesRef.current = bodies
+    }, [bodies])
     useEffect(() => {
         shipsRef.current = ships
     }, [ships])
@@ -97,8 +97,8 @@ export function WorldMapView({
         onShipClickRef.current = onShipClick
     }, [onShipClick])
     useEffect(() => {
-        onPlanetClickRef.current = onPlanetClick
-    }, [onPlanetClick])
+        onBodyClickRef.current = onBodyClick
+    }, [onBodyClick])
     useEffect(() => {
         onRightClickRef.current = onRightClick
     }, [onRightClick])
@@ -127,12 +127,12 @@ export function WorldMapView({
             // already fired against a null mapRef and the initial payload
             // would be missing.
             map.setTargetingMode(isTargetingRef.current)
-            map.setPlanets(planetsRef.current)
+            map.setBodies(bodiesRef.current)
             map.setShips(shipsRef.current)
             map.setSelection(selectionRef.current)
             map.setOnTileClick((x, y) => onTileClickRef.current?.(x, y))
             map.setOnShipClick((ship) => onShipClickRef.current?.(ship))
-            map.setOnPlanetClick((planet) => onPlanetClickRef.current?.(planet))
+            map.setOnBodyClick((body) => onBodyClickRef.current?.(body))
             map.setOnRightClick(() => onRightClickRef.current?.())
             // Always-debounce: every hover-change resets the timer; hover-leave
             // hides immediately so a quick brush past a marker doesn't leave
@@ -169,8 +169,8 @@ export function WorldMapView({
     // Subsequent updates: once mapRef is set, push through normally. The
     // first render's payload was already applied inside init().then above.
     useEffect(() => {
-        mapRef.current?.setPlanets(planets)
-    }, [planets])
+        mapRef.current?.setBodies(bodies)
+    }, [bodies])
 
     useEffect(() => {
         mapRef.current?.setShips(ships)
@@ -251,7 +251,7 @@ function Tooltip({ info }: { info: NonNullable<HoverInfo> }) {
                 {info.ship.isOwn && <span className="world-map__tooltip-tag">yours</span>}
             </>
         ) : (
-            <span className="world-map__tooltip-name">{info.planet.name}</span>
+            <span className="world-map__tooltip-name">{info.body.name}</span>
         )
 
     return (
