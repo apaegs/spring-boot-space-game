@@ -15,6 +15,10 @@ public record ShipOrderDto(
         OrderKind kind,
         Map<String, Object> params,
         OrderStatus status,
+        /** True iff the auto-prerequisite middleware inserted this order, not the player. */
+        boolean autoInserted,
+        /** Counter incremented by multi-tick handlers per tick of progress. */
+        int progressTicks,
         OffsetDateTime createdAt,
         OffsetDateTime startedAt,
         OffsetDateTime completedAt
@@ -26,6 +30,8 @@ public record ShipOrderDto(
                 order.getKind(),
                 order.getParams(),
                 order.getStatus(),
+                order.isAutoInserted(),
+                order.getProgressTicks(),
                 order.getCreatedAt(),
                 order.getStartedAt(),
                 order.getCompletedAt()

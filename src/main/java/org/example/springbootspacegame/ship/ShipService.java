@@ -3,6 +3,8 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
+import org.example.springbootspacegame.body.CelestialBodyKind;
+import org.example.springbootspacegame.body.CelestialBodyService;
 import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderStatus;
 import org.example.springbootspacegame.order.ShipOrderRepository;
@@ -31,6 +33,7 @@ public class ShipService {
     private final ShipRepository shipRepository;
     private final UserRepository userRepository;
     private final ShipOrderRepository shipOrderRepository;
+    private final CelestialBodyService celestialBodyService;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
@@ -128,17 +131,63 @@ public class ShipService {
     }
 
     /**
+     * Read-time status as the UI sees it. Wraps {@link #deriveStatus(Ship)} so
+     * external callers (frontend, auth, etc.) don't need to bypass the
+     * private-ness of the original method. Includes the {@code MOVING}
+     * short-circuit, so an order handler asking about its OWN ship's status
+     * while it's the active order will see {@code MOVING} — use
+     * {@link #positionalStatusOf} from inside a handler instead.
+     */
+    public ShipStatus statusOf(Ship ship) {
+        return deriveStatus(ship);
+    }
+
+    /**
+     * "Where is the ship sitting?" — LANDED / ORBITING / IDLE only, ignoring
+     * whatever ACTIVE order is in flight. Used by order handlers
+     * (TAKE_OFF / EXTRACT / SELL) and the auto-prerequisite middleware to ask
+     * the only question they actually care about: <i>is the ship at a body</i>.
+     *
+     * <p>Without this, a handler calling {@link #statusOf} from inside its own
+     * {@code processOneTick} would see its own ACTIVE order as a queued
+     * activity and incorrectly classify the ship as {@code MOVING}.
+     */
+    public ShipStatus positionalStatusOf(Ship ship) {
+        return shipOrderRepository
+                .findFirstByShipIdAndStatusAndKindInOrderByCompletedAtDesc(
+                        ship.getId(), OrderStatus.COMPLETED,
+                        java.util.List.of(OrderKind.LAND, OrderKind.TAKE_OFF))
+                .map(o -> {
+                    if (o.getKind() == OrderKind.TAKE_OFF) {
+                        return ShipStatus.IDLE;
+                    }
+                    return celestialBodyService.findAt(ship.getX(), ship.getY())
+                            .map(body -> body.getKind() == CelestialBodyKind.GAS_GIANT
+                                    ? ShipStatus.ORBITING
+                                    : ShipStatus.LANDED)
+                            .orElse(ShipStatus.IDLE);
+                })
+                .orElse(ShipStatus.IDLE);
+    }
+
+    /**
      * Derives the read-time {@link ShipStatus} for a ship without storing it.
      *
      * <ul>
-     *   <li>MOVING — ship has at least one PENDING or ACTIVE order</li>
-     *   <li>LANDED — no active orders AND the ship's last completed order was LAND</li>
-     *   <li>IDLE   — anything else</li>
+     *   <li>{@code MOVING}   — ship has at least one PENDING or ACTIVE order</li>
+     *   <li>{@code LANDED}   — last completed LAND/TAKE_OFF was LAND, and the ship is currently on a non-gas-giant body</li>
+     *   <li>{@code ORBITING} — last completed LAND/TAKE_OFF was LAND, and the body it's on is a {@code GAS_GIANT}</li>
+     *   <li>{@code IDLE}     — anything else (no LAND ever, last was TAKE_OFF, or LAND but ship has since moved off the body)</li>
      * </ul>
      *
-     * <p>LANDED is intentionally order-history-based, not coordinate-based.
-     * A ship that simply stops on a body tile without issuing a LAND order
-     * is IDLE — matching the domain rule that landing is an explicit action.
+     * <p>The "LANDED vs ORBITING" choice is read-time, not stored — it's a
+     * pure function of the body's {@code kind} at the ship's current position.
+     * Means a body's kind change would retroactively re-classify the ship's
+     * state (impossible in v1, but the model handles it).
+     *
+     * <p>LAND is also intentionally order-history-based, not coordinate-based.
+     * A ship that drifts onto a body's tile without LAND-ing is still IDLE —
+     * matching the domain rule that arrival is an explicit action.
      *
      * <p>Must be called within an active transaction so the repository calls
      * participate in the same snapshot.
@@ -147,11 +196,7 @@ public class ShipService {
         if (shipOrderRepository.existsByShipIdAndStatusIn(ship.getId(), ACTIVE_STATUSES)) {
             return ShipStatus.MOVING;
         }
-        return shipOrderRepository
-                .findFirstByShipIdAndStatusOrderByCompletedAtDesc(ship.getId(), OrderStatus.COMPLETED)
-                .filter(o -> o.getKind() == OrderKind.LAND)
-                .map(o -> ShipStatus.LANDED)
-                .orElse(ShipStatus.IDLE);
+        return positionalStatusOf(ship);
     }
 
     private static String autoName(String username, long existingCount) {
