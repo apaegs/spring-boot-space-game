@@ -35,7 +35,7 @@
              lockstep when either of those moves. -->
         <node.version>v24.0.0</node.version>
         <pnpm.version>11.4.0</pnpm.version>
-        <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+        <frontend-maven-plugin.version>2.0.0</frontend-maven-plugin.version>
 
         <!-- Skip the frontend build (pnpm install + Vite build + dist copy).
              Default false so `./mvnw package` produces a complete jar with
