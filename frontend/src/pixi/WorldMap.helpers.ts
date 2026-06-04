@@ -34,3 +34,21 @@ export function tileToPx(x: number, y: number, tilePx: number = TILE_PX): { px: 
 export function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value))
 }
+
+/**
+ * Convert a screen-space drag delta (in CSS pixels) into a camera-space
+ * delta (in tile coordinates) at the given zoom. Sign is negated: dragging
+ * right physically "pulls" the world right, which means the camera moves
+ * left to keep the same world point under the cursor.
+ */
+export function pixelsToCameraDelta(
+    dx: number,
+    dy: number,
+    zoom: number,
+    tilePx: number = TILE_PX,
+): { dx: number; dy: number } {
+    const scale = tilePx * zoom
+    // `+ 0` collapses the IEEE-754 -0 that `-(0) / n` produces back to +0
+    // so callers (and strict-equality tests) don't have to special-case it.
+    return { dx: -dx / scale + 0, dy: -dy / scale + 0 }
+}

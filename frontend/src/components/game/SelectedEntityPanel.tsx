@@ -387,6 +387,7 @@ function OwnShipOrders({
                                 onClick={() => cancel.mutate(order.id)}
                                 disabled={cancel.isPending}
                                 title="Cancel this order"
+                                aria-label="Cancel order"
                             >
                                 ×
                             </button>

@@ -627,10 +627,16 @@
     grid-template-columns: max-content max-content 1fr max-content;
     gap: 0.5rem;
     align-items: center;
+    min-height: 36px;
     padding: 0.4rem 0.6rem;
     background: #1c1c38;
     border-radius: 4px;
     font-size: 0.9rem;
+    transition: background-color 120ms ease-out;
+}
+
+.order-row:hover {
+    background: #23234a;
 }
 
 .order-kind {
@@ -655,17 +661,27 @@
 
 .order-row button {
     font: inherit;
+    font-size: 1rem;
+    line-height: 1;
     background: transparent;
     color: #8888aa;
     border: none;
-    padding: 0.1rem 0.4rem;
+    padding: 0.45rem 0.6rem;
+    min-width: 32px;
+    min-height: 32px;
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
-.order-row button:hover {
+.order-row button:hover,
+.order-row button:focus-visible {
     background: #2a2a45;
     color: #fff;
+    outline: none;
+}
+
+.order-row button:focus-visible {
+    box-shadow: 0 0 0 2px #66ddff;
 }
 
 /* Skeleton placeholder rows for the orders list while the first fetch is in
@@ -713,7 +729,8 @@
 
 .add-order__btn {
     font: inherit;
-    padding: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    min-height: 36px;
     background: transparent;
     color: #aaaacc;
     border: 1px dashed #2a2a45;
@@ -722,9 +739,11 @@
     width: 100%;
 }
 
-.add-order__btn:hover {
+.add-order__btn:hover,
+.add-order__btn:focus-visible {
     border-color: #66ddff;
     color: #66ddff;
+    outline: none;
 }
 
 .add-order__menu {
@@ -738,7 +757,8 @@
 
 .add-order__menu button {
     font: inherit;
-    padding: 0.4rem;
+    padding: 0.65rem 1rem;
+    min-height: 36px;
     background: transparent;
     color: inherit;
     border: 1px solid #2a2a45;
@@ -747,9 +767,16 @@
     text-align: left;
 }
 
-.add-order__menu button:hover {
+.add-order__menu button:hover:not(:disabled),
+.add-order__menu button:focus-visible:not(:disabled) {
     border-color: #66ddff;
     color: #66ddff;
+    outline: none;
+}
+
+.add-order__menu button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 .add-order__cancel {
@@ -816,10 +843,17 @@
 .cargo li {
     display: flex;
     justify-content: space-between;
-    padding: 0.2rem 0.4rem;
+    align-items: center;
+    min-height: 28px;
+    padding: 0.3rem 0.5rem;
     background: #1c1c38;
     border-radius: 3px;
     font-size: 0.85rem;
+    transition: background-color 120ms ease-out;
+}
+
+.cargo li:hover {
+    background: #23234a;
 }
 
 .cargo__qty {
@@ -855,10 +889,18 @@
 .body-buyers li {
     display: flex;
     justify-content: space-between;
-    padding: 0.2rem 0.4rem;
+    align-items: center;
+    min-height: 28px;
+    padding: 0.3rem 0.5rem;
     background: #1c1c38;
     border-radius: 3px;
     font-size: 0.85rem;
+    transition: background-color 120ms ease-out;
+}
+
+.body-reserves li:hover,
+.body-buyers li:hover {
+    background: #23234a;
 }
 
 .body-reserves__amount,
