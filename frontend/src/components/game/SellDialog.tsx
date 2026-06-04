@@ -52,24 +52,25 @@ export function SellDialog({
         }
     }, [open, offers])
 
-    // If cargo or buyPrices change while the dialog is open and the currently
-    // selected resource isn't among the offers anymore, reset.
-    useEffect(() => {
-        if (!open) return
-        if (resource !== null && !offers.some((o) => o.kind === resource)) {
-            setResource(offers[0]?.kind ?? null)
-        }
-    }, [open, offers, resource])
+    // Derived during render rather than via setState-in-effect (the
+    // react-hooks/set-state-in-effect rule forbids the effect pattern — it
+    // forces cascading renders). If offers change while the dialog is open
+    // and the stored choice is no longer sellable, use the first valid
+    // option as the effective selection. `setResource` is still the
+    // committed value (user clicks update it).
+    const effectiveResource: ResourceKind | null =
+        resource !== null && offers.some((o) => o.kind === resource)
+            ? resource
+            : (offers[0]?.kind ?? null)
 
-    const hasValidSelection = resource !== null && offers.some((o) => o.kind === resource)
-    const canSell = hasValidSelection && !submitting
+    const canSell = effectiveResource !== null && !submitting
 
     const submit = async () => {
-        if (!canSell || resource === null) return
+        if (!canSell || effectiveResource === null) return
         setSubmitting(true)
         setError(null)
         try {
-            await onConfirm(resource)
+            await onConfirm(effectiveResource)
         } catch (e) {
             setError(e instanceof ApiError && e.message ? e.message : 'Could not queue sell.')
         } finally {
@@ -104,7 +105,7 @@ export function SellDialog({
                                     type="radio"
                                     name="resource"
                                     value={o.kind}
-                                    checked={resource === o.kind}
+                                    checked={effectiveResource === o.kind}
                                     onChange={() => setResource(o.kind)}
                                 />
                                 <span className="sell-dialog__resource-name">{o.kind}</span>

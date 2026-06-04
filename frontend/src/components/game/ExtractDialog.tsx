@@ -47,22 +47,23 @@ export function ExtractDialog({
     }, [open, body.reserves])
 
     const available = body.reserves.filter((r) => r.reserve > 0)
-    // If body.reserves changes while the dialog is open and the currently
-    // selected resource drops to zero (or disappears), reset to the first
-    // still-available one. Without this, the player could submit a stale
-    // resource that the handler would just cancel.
-    useEffect(() => {
-        if (!open) return
-        if (resource !== null && !available.some((r) => r.kind === resource)) {
-            setResource(available[0]?.kind ?? null)
-        }
-    }, [open, available, resource])
 
-    const hasValidSelection = resource !== null && available.some((r) => r.kind === resource)
-    const canExtract = hasValidSelection && (modeKind !== 'ticks' || ticks > 0) && !submitting
+    // Derived during render rather than via setState-in-effect (the
+    // react-hooks/set-state-in-effect rule rightly forbids that pattern —
+    // it forces cascading renders). If reserves change while the dialog is
+    // open and the player's stored choice is no longer available, treat the
+    // first valid option as effectively selected. `setResource` is still the
+    // committed value (user clicks update it) — this layer just keeps it from
+    // pointing at something that's gone.
+    const effectiveResource: ResourceKind | null =
+        resource !== null && available.some((r) => r.kind === resource)
+            ? resource
+            : (available[0]?.kind ?? null)
+
+    const canExtract = effectiveResource !== null && (modeKind !== 'ticks' || ticks > 0) && !submitting
 
     const submit = async () => {
-        if (!canExtract || resource === null) return
+        if (!canExtract || effectiveResource === null) return
         const mode: ExtractMode =
             modeKind === 'until_cancelled'
                 ? 'until_cancelled'
@@ -72,7 +73,7 @@ export function ExtractDialog({
         setSubmitting(true)
         setError(null)
         try {
-            await onConfirm(resource, mode)
+            await onConfirm(effectiveResource, mode)
         } catch (e) {
             setError(e instanceof ApiError && e.message ? e.message : 'Could not queue extract.')
         } finally {
@@ -111,7 +112,7 @@ export function ExtractDialog({
                                     type="radio"
                                     name="resource"
                                     value={r.kind}
-                                    checked={resource === r.kind}
+                                    checked={effectiveResource === r.kind}
                                     onChange={() => setResource(r.kind)}
                                 />
                                 <span className="extract-dialog__resource-name">{r.kind}</span>
