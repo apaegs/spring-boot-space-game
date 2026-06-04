@@ -8,7 +8,7 @@ Living document for the game's core domain. Updated in the **same PR** as any sc
 
 The game is a 2D space explorer on a fixed 100×100 grid. Each player controls a mothership that can move between tiles and interact with celestial bodies (planets, asteroids, gas giants, stars). The world ticks in the background (≤ 1 min) and processes any orders queued on ships.
 
-Players queue a sequence of orders (MOVE, LAND, …) on their ship, log out, and the world advances those orders one step per tick while they're away.
+Players queue a sequence of orders (MOVE, EXTRACT, SELL) on their ship, log out, and the world advances those orders one step per tick while they're away. A ship Chebyshev-adjacent to a body is automatically `ORBITING` — no explicit landing.
 
 ```text
 User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
@@ -17,7 +17,7 @@ User (1) ─── (1..N) Ship           # 1 in v1, schema allows more
                      ▼ located at
               (x, y) on Grid (100×100)
                      │
-                     ▼ can LAND on
+                     ▼ ORBITING when Chebyshev-adjacent to
               CelestialBody (pre-seeded; kind ∈ {ROCKY_PLANET, LAVA_PLANET, ICE_PLANET, GAS_GIANT, ASTEROID, STAR})
 
 WorldState (singleton)              # current_tick, last_tick_at
@@ -58,7 +58,7 @@ A player-controlled vessel. **A User can have any number of Ships** (the auto-cr
 
 **Position vs. orders**: a ship is at a single tile `(x, y)`. What it's currently *doing* lives in the order queue (see `ShipOrder` below), not on the ship row. Earlier v1 drafts had `destination_x/y` columns directly on the ship; those were dropped in V4 when the orders queue replaced them.
 
-**Spawn**: every new ship — auto-created or via `POST /api/ships` — starts at `(50, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Earth is also seeded at `(50, 50)` so a fresh player's mothership starts standing on their home planet.
+**Spawn**: every new ship — auto-created or via `POST /api/ships` — starts at `(51, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Earth is seeded at `(50, 50)`, one tile west, so a fresh player's mothership starts Chebyshev-adjacent to Earth and the status derivation puts it in `ORBITING` immediately without any explicit order. Spawn collisions on `(51, 50)` are tolerated until per-tile collision (#88) lands.
 
 **Name**: auto-generated as `"<username>'s ship"` for the first ship and `"<username>'s ship N"` for the Nth additional ship (N = current ship count + 1). `POST /api/ships` accepts an optional `name` in the body to override the auto-name.
 
@@ -70,7 +70,7 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 |---------------|--------------|----------------------------------------------------------------------|
 | id            | UUID         | PK                                                                   |
 | ship_id       | UUID         | FK → ship.id, `ON DELETE CASCADE`                                    |
-| kind          | VARCHAR(32)  | `'MOVE'`, `'LAND'`, … extensible. Validated at the application layer |
+| kind          | VARCHAR(32)  | `'MOVE'`, `'EXTRACT'`, `'SELL'`, … extensible. Validated at the application layer |
 | params        | JSONB        | order-type-specific payload (e.g. `{ "x": 50, "y": 50 }` for MOVE)   |
 | status        | VARCHAR(16)  | `PENDING` → `ACTIVE` → `COMPLETED` (or `CANCELLED`)                  |
 | created_at    | TIMESTAMPTZ  | default `now()` — drives queue order                                 |
@@ -83,37 +83,28 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 
 **v1 order types**:
 
-| Kind     | Params                                                                                          | Behavior                                                                                                                                                                          |
-|----------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| MOVE     | `{ "x": int, "y": int }`                                                                        | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival.                                                                                                       |
-| LAND     | `{}`                                                                                            | Validate that the ship is on a celestial body's tile. If yes, complete in one tick. Status derivation reads the body's `kind` to decide LANDED vs ORBITING (GAS_GIANT → ORBITING). |
-| TAKE_OFF | `{}`                                                                                            | Validate that the ship is currently at a body (LANDED/ORBITING). One tick. Returns the ship to IDLE status (most recent completed kind is now TAKE_OFF).                          |
-| EXTRACT  | `{ "resourceKind": ResourceKind, "mode": "until_cancelled" \| { "ticks": N } \| { "until_full": true } }` | Per tick, extract `min(extract_rate, reserve, cap-current)` units of the resource into `ship_cargo`. Terminates per `mode`. Cancels if ship state ≠ resource's required extraction state. |
-| SELL     | `{ "resourceKind": ResourceKind }`                                                              | One tick. Convert all cargo of `resourceKind` to credits at the body's per-resource buy price. Deletes the cargo row. Cancels if the body doesn't buy this resource or the ship has none. |
+| Kind    | Params                                                                                                      | Behavior                                                                                                                                                                                       |
+|---------|-------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| MOVE    | `{ "x": int, "y": int }`                                                                                    | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival.                                                                                                                    |
+| EXTRACT | `{ "resourceKind": ResourceKind, "mode": "until_cancelled" \| { "ticks": N } \| { "until_full": true } }` | Per tick, extract `min(extract_rate, reserve, cap-current)` units of the resource into `ship_cargo` from the first Chebyshev-adjacent body. Terminates per `mode`. Cancels if not `ORBITING`. |
+| SELL    | `{ "resourceKind": ResourceKind }`                                                                          | One tick. Convert all cargo of `resourceKind` to credits at the first adjacent body's buy price. Deletes the cargo row. Cancels if not `ORBITING`, the body doesn't buy this resource, or the ship has none. |
 
-**Auto-prerequisite insertion**. When the player POSTs an order whose preconditions
-aren't met, the API's `ShipOrderService.appendOrder` inserts the prerequisite
-into the queue *just before* the player's order, with `auto_inserted = true`
-so the UI can render an "↩ auto" marker (PR 3). The two rules:
-
-- POST `EXTRACT`/`SELL` while not at a body → prepend `LAND`.
-- POST `MOVE` while at a body → prepend `TAKE_OFF`.
-
-Decisions use `positionalStatusOf` (ignores in-flight orders) so the
-middleware's view of "at a body" matches reality even mid-queue. Handler-level
-state checks (also `positionalStatusOf`) catch multi-step queues where the
-eventual state differs — the relevant order cancels with a clear reason rather
-than silently misbehaving.
+**No auto-prerequisite middleware**. EXTRACT and SELL queued from a non-`ORBITING`
+position simply cancel at tick time with a clear reason — the player MOVEs
+adjacent to the target body themselves first. (Earlier `LAND` / `TAKE_OFF`
+auto-injection — and the order kinds themselves — were removed in #87.)
 
 `ship_orders.progress_ticks` is a per-order counter incremented by multi-tick
 handlers (currently only `EXTRACT` in `mode={ticks: N}`) every tick they make
 progress. Plain `INT` column added in V10 so Hibernate's dirty checking
 catches updates reliably — mutating the `params` JSONB Map in place is
-fragile under Hibernate's JSON handling.
+fragile under Hibernate's JSON handling. The `auto_inserted` column added
+alongside it was dropped in V11 when the middleware that wrote `TRUE` to it
+went away.
 
 ### CelestialBody
 
-Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and stars. Replaces the v1 `Planet` entity (table renamed in V8). The only meaningful target for the LAND order.
+Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and stars. Replaces the v1 `Planet` entity (table renamed in V8). The thing a ship is `ORBITING` when adjacent.
 
 | Field        | Type         | Notes                                                       |
 |--------------|--------------|-------------------------------------------------------------|
@@ -124,18 +115,18 @@ Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and
 | description  | TEXT         | flavor text                                                 |
 | kind         | VARCHAR(32)  | `CelestialBodyKind`; one of the taxonomy below. Added in V8.|
 
-**Kind taxonomy** (`CelestialBodyKind`):
+**Kind taxonomy** (`CelestialBodyKind`). Kind is descriptive — it drives the seeded yield/buy matrix in V9 but doesn't change derivation rules. Every kind that has reserves is reachable through `ORBITING` (Chebyshev-adjacent) the same way.
 
-| Kind           | Arrival state | Notes                                                                       |
-|----------------|---------------|-----------------------------------------------------------------------------|
-| `ROCKY_PLANET` | LANDED        | Common. Iron-rich, trace water and rare metal.                              |
-| `LAVA_PLANET`  | LANDED        | Rare. Heavy rare-metal yield.                                               |
-| `ICE_PLANET`   | LANDED        | Water-heavy.                                                                |
-| `GAS_GIANT`    | ORBITING      | Can't physically land; LAND resolves to ORBITING. Hydrogen + helium.        |
-| `ASTEROID`     | LANDED        | Many on the map. Mixed iron/water/rare-metal trace.                         |
-| `STAR`         | _neither_     | Decorative + nav landmark. No extraction, no LAND target.                   |
+| Kind           | Notes                                                                  |
+|----------------|------------------------------------------------------------------------|
+| `ROCKY_PLANET` | Common. Iron-rich, trace water and rare metal.                         |
+| `LAVA_PLANET`  | Rare. Heavy rare-metal yield.                                          |
+| `ICE_PLANET`   | Water-heavy.                                                           |
+| `GAS_GIANT`    | Hydrogen + helium atmosphere.                                          |
+| `ASTEROID`     | Many on the map. Mixed iron/water/rare-metal trace.                    |
+| `STAR`         | Decorative + nav landmark. No extraction.                              |
 
-Seeded in `V9__seed_initial_map.sql` — ~40 bodies across the kind taxonomy. The seed replaces the original V5 6-planet seed entirely. Earth still sits at `(50, 50)` (the spawn tile) so a fresh player's mothership starts on their home body.
+Seeded in `V9__seed_initial_map.sql` — ~40 bodies across the kind taxonomy. The seed replaces the original V5 6-planet seed entirely. Earth still sits at `(50, 50)`; spawn is `(51, 50)`, one tile east, so a fresh player's mothership starts Chebyshev-adjacent to its home body and derives `ORBITING` immediately.
 
 ### BodyResource
 
@@ -159,15 +150,15 @@ Per-body buy price for a single resource. Composite PK `(body_id, resource_kind)
 
 ### ResourceKind
 
-Application-layer enum (not a DB table) catalogue of resources a ship can carry and a body can yield or buy. Each kind declares the ship state required to extract it.
+Application-layer enum (not a DB table) catalogue of resources a ship can carry and a body can yield or buy. All resources extract from `ORBITING` — which bodies yield which is governed entirely by the seeded `body_resources` matrix.
 
-| Kind         | Extraction state | Source examples       | Sink examples              |
-|--------------|------------------|-----------------------|----------------------------|
-| `IRON`       | LANDED           | Rocky planets, asteroids | Industrial bodies       |
-| `WATER`      | LANDED           | Ice planets, asteroids   | Habitat bodies          |
-| `HYDROGEN`   | ORBITING         | Gas giants               | Habitat/fuel buyers     |
-| `HELIUM`     | ORBITING         | Gas giants               | Tech buyers             |
-| `RARE_METAL` | LANDED           | Lava planets, asteroids  | Tech buyers             |
+| Kind         | Source examples            | Sink examples           |
+|--------------|----------------------------|-------------------------|
+| `IRON`       | Rocky planets, asteroids   | Industrial bodies       |
+| `WATER`      | Ice planets, asteroids     | Habitat bodies          |
+| `HYDROGEN`   | Gas giants                 | Habitat/fuel buyers     |
+| `HELIUM`     | Gas giants                 | Tech buyers             |
+| `RARE_METAL` | Lava planets, asteroids    | Tech buyers             |
 
 ### ShipType
 
@@ -221,7 +212,6 @@ With justification — so we know *why* something was deferred, not just *that* 
 | **Crew**                             | Not part of the v1 loop                                                           | New `crew_member` table, FK → ship.id                           |
 | **Ship speed**                       | All ships move 1 tile/tick in v1                                                  | New `speed` column on `ship`; MOVE handler loops `speed` times  |
 | **Ship type stats beyond cargo/extract** | One ship class (`MOTHERSHIP`) in v1; speed/fuel/hull land as new columns on `ship_types` when needed | Add columns to `ship_types` + handlers that read them          |
-| **`TAKE_OFF` / `EXTRACT` / `SELL` order kinds** | Catalog + tables are in V8 (PR 1); handlers + auto-prerequisite middleware land in PR 2 | See umbrella issue #80 PR 2.                       |
 | **More order kinds** (WAIT/SCAN/ATTACK/…) | Schema + dispatcher are ready; just need handler classes | New `OrderHandler` impl per kind + entry in the order-kind whitelist |
 | **Completed-order cleanup**          | History stays in `ship_orders` forever in v1; not enough rows to matter           | Scheduled archive job, or partitioning by `completed_at`        |
 | **Procgen map**                      | V9 hand-seeds ~40 bodies for v1; procgen produces the same body+resource model from a seed source | See #47 — same model, different seed source.        |
@@ -245,7 +235,7 @@ With justification — so we know *why* something was deferred, not just *that* 
 Originally raised in issue #2; some are now resolved by later issues.
 
 1. ~~4- or 8-direction movement?~~ **Resolved**: 8-direction (Chebyshev). See ShipOrder.MOVE.
-2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11**: explicit LAND order, queued alongside MOVE. Lets players script "fly to Mars, then land" as a single chain.
+2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11, superseded in #87**: the orbit-only model collapsed `LANDED`/`ORBITING`/`LAND`/`TAKE_OFF` to a single position-derived `ORBITING` (ship Chebyshev-adjacent to any body) — no order needed.
 3. ~~Number of planets and placement?~~ **Resolved in #46 + PR 1 of #80**: 40 hand-placed celestial bodies across the kind taxonomy in `V9__seed_initial_map.sql` (replaces the original V5 6-planet seed).
 4. Ship name: player-chosen or generated? Currently generated (`"<username>'s ship"`). Player-chosen deferred until there's a UI to choose.
 5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*

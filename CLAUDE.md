@@ -4,7 +4,7 @@ This file is for two readers: **the friend being onboarded** and **Claude the ag
 
 ## What the project is
 
-A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid populated with celestial bodies (planets, asteroids, gas giants, stars). The player sets a destination, the ship moves 1 tile per tick, and on arrival at a body the player can land and interact. The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
+A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid populated with celestial bodies (planets, asteroids, gas giants, stars). The player sets a destination, the ship moves 1 tile per tick, and when Chebyshev-adjacent to a body the ship is automatically `ORBITING` and can interact with it (EXTRACT / SELL). The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
 
 Detailed domain model: see [DOMAIN.md](DOMAIN.md).
 
@@ -148,10 +148,10 @@ Use these terms consistently in code, commits, issues and discussion. Detailed m
 - **Ship** — The player's mothership. Every Ship has a `ship_type_id` pointing into the ship types catalog (v1: only `MOTHERSHIP`).
 - **ShipType** — A row in the ship types catalog. Stats per type (cargo capacity, extract rate) live here, not on the ship row.
 - **ShipCargo** — Per-(ship, resource) inventory row. Cargo cap is enforced against the sum across all resources.
-- **CelestialBody** — A pre-seeded point on the map (planet, asteroid, gas giant, star). Has a `kind` from `CelestialBodyKind`. Bodies are the only valid LAND targets and the only source of resources.
+- **CelestialBody** — A pre-seeded point on the map (planet, asteroid, gas giant, star). Has a `kind` from `CelestialBodyKind`. Bodies are the only source of resources. A ship Chebyshev-adjacent to a body is `ORBITING` it — that's how EXTRACT/SELL target a body. Ships never sit on a body's tile (issue #87, orbit-only model).
 - **BodyResource** — Per-(body, resource) reserve. The EXTRACT handler decrements it.
 - **BodyBuyPrice** — Per-(body, resource) buy price. The SELL handler reads it.
-- **ResourceKind** — The catalogue of resources (`IRON`, `WATER`, `HYDROGEN`, `HELIUM`, `RARE_METAL`). Each declares its required extraction state.
+- **ResourceKind** — The catalogue of resources (`IRON`, `WATER`, `HYDROGEN`, `HELIUM`, `RARE_METAL`). All resources extract from `ORBITING`; which body yields which is governed by the seeded matrix.
 - **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, CelestialBody) have coordinates.
 - **Tick** — A recurring time interval (≤ 1 min) when the world is processed: ships in motion are advanced, future feature effects are triggered. Scheduled centrally.
 - **World** — The global state all players share (grid size, current tick). A single `WorldState` singleton row.

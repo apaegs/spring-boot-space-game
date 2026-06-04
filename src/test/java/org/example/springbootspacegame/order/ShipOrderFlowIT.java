@@ -30,9 +30,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * End-to-end coverage of the orders queue: API surface, tick processing, and
- * the MOVE/LAND handlers together. Calls {@link TickService#advanceTick()}
- * directly instead of waiting for the scheduler — see CLAUDE.md "Integration
- * test setup" + the test-only {@code game.tick.interval-ms} override.
+ * the MOVE handler. Calls {@link TickService#advanceTick()} directly instead
+ * of waiting for the scheduler — see CLAUDE.md "Integration test setup" + the
+ * test-only {@code game.tick.interval-ms} override.
+ *
+ * <p>Resource-handler coverage (EXTRACT / SELL, status derivation) lives in
+ * {@link ResourceGameplayIT}.
  */
 @IntegrationTest
 class ShipOrderFlowIT {
@@ -63,20 +66,20 @@ class ShipOrderFlowIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "sisko", "sisko@enterprise.example", "deep-space-niner");
         UUID shipId = firstShipIdFor(session);
 
-        // Player spawns at (50, 50); send the ship to (52, 53).
-        UUID orderId = postOrder(session, shipId, "MOVE", Map.of("x", 52, "y", 53));
+        // Player spawns at (51, 50); send the ship to (53, 53).
+        UUID orderId = postOrder(session, shipId, "MOVE", Map.of("x", 53, "y", 53));
 
-        // Tick 1: diagonal step toward target -> (51, 51)
+        // Tick 1: diagonal step toward target -> (52, 51)
         tickService.advanceTick();
-        assertShipAt(session, shipId, 51, 51);
+        assertShipAt(session, shipId, 52, 51);
 
-        // Tick 2: diagonal again -> (52, 52)
+        // Tick 2: diagonal again -> (53, 52)
         tickService.advanceTick();
-        assertShipAt(session, shipId, 52, 52);
+        assertShipAt(session, shipId, 53, 52);
 
-        // Tick 3: only y axis left -> (52, 53), arrived, order completes.
+        // Tick 3: only y axis left -> (53, 53), arrived, order completes.
         tickService.advanceTick();
-        assertShipAt(session, shipId, 52, 53);
+        assertShipAt(session, shipId, 53, 53);
 
         // After completion, the order leaves the visible queue.
         mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
@@ -85,40 +88,6 @@ class ShipOrderFlowIT {
 
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
                 .isEqualTo(OrderStatus.COMPLETED);
-    }
-
-    @Test
-    void landOnBodyCompletesInOneTick() throws Exception {
-        // Player spawns at (50, 50) — Earth is seeded there in V9, so LAND
-        // succeeds immediately without any MOVE first.
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "janeway", "janeway@enterprise.example", "coffee-black-1");
-        UUID shipId = firstShipIdFor(session);
-
-        UUID orderId = postOrder(session, shipId, "LAND", Map.of());
-
-        tickService.advanceTick();
-
-        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.COMPLETED);
-    }
-
-    @Test
-    void landOffBodyCancelsWithReason() throws Exception {
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "picard", "picard@enterprise.example", "engage-warp-7");
-        UUID shipId = firstShipIdFor(session);
-
-        // MOVE one tile off-spawn (Earth is at 50,50; (51,50) is empty in V9),
-        // then LAND on the empty tile — LAND should cancel because there's no
-        // celestial body under the ship.
-        postOrder(session, shipId, "MOVE", Map.of("x", 51, "y", 50));
-        UUID landId = postOrder(session, shipId, "LAND", Map.of());
-
-        tickService.advanceTick(); // MOVE completes (51, 50)
-        tickService.advanceTick(); // LAND fires, finds no body, cancels
-
-        ShipOrder land = orderRepository.findById(landId).orElseThrow();
-        assertThat(land.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(land.getCompletedAt()).isNotNull();
     }
 
     @Test
@@ -148,10 +117,10 @@ class ShipOrderFlowIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "tuvok", "tuvok@enterprise.example", "logical-choice");
         UUID shipId = firstShipIdFor(session);
 
-        UUID first = postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 60)); // ACTIVE after first tick
-        UUID second = postOrder(session, shipId, "LAND", Map.of());                // still PENDING
+        UUID first = postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 60));  // ACTIVE after first tick
+        UUID second = postOrder(session, shipId, "MOVE", Map.of("x", 70, "y", 70)); // still PENDING
 
-        // Cancel the pending LAND before any tick fires.
+        // Cancel the pending second MOVE before any tick fires.
         mockMvc.perform(delete("/api/ships/{shipId}/orders/{orderId}", shipId, second).session(session).with(csrf()))
                 .andExpect(status().isNoContent());
 
@@ -169,17 +138,17 @@ class ShipOrderFlowIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "ezri", "ezri@enterprise.example", "joined-trill1");
         UUID shipId = firstShipIdFor(session);
 
-        // Three-step plan: move to Mars (60,55), land there.
-        // Spawn is (50,50); Chebyshev distance to (60,55) is 10 steps.
-        postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 55));
-        postOrder(session, shipId, "LAND", Map.of());
+        // Two-step plan: move to a tile next to Mars (60,55), then to one next
+        // to Venus (52,46). Spawn (51,50) -> (61,55) is 10 Chebyshev steps;
+        // (61,55) -> (52,47) is 9 more.
+        postOrder(session, shipId, "MOVE", Map.of("x", 61, "y", 55));
+        postOrder(session, shipId, "MOVE", Map.of("x", 52, "y", 47));
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 19; i++) {
             tickService.advanceTick();
         }
-        assertShipAt(session, shipId, 60, 55);
 
-        tickService.advanceTick(); // LAND fires on Mars
+        assertShipAt(session, shipId, 52, 47);
 
         List<ShipOrder> active = orderRepository
                 .findByShipIdAndStatusInOrderByCreatedAtAsc(

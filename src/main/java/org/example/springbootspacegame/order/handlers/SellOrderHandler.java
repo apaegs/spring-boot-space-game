@@ -24,12 +24,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 
 /**
- * SELL: convert all cargo of a given resource to credits at the celestial body
- * the ship is on. One tick, params: {@code { "resourceKind": "IRON" }}.
+ * SELL: convert all cargo of a given resource to credits at a celestial body
+ * adjacent to the ship's tile. One tick, params: {@code { "resourceKind": "IRON" }}.
  *
- * <p>Cancels if the ship isn't at a body (status != LANDED/ORBITING), the body
- * doesn't buy this resource (no row in {@code body_buy_prices}), or the ship
- * has no cargo of this kind.
+ * <p>Cancels if the ship isn't {@code ORBITING} (no adjacent body), the
+ * adjacent body doesn't buy this resource (no row in {@code body_buy_prices}),
+ * or the ship has no cargo of this kind.
  *
  * <p>Successful sale: {@code credits += qty * pricePerUnit}, then the
  * {@code ship_cargo} row is deleted (the entity invariant forbids qty = 0
@@ -69,13 +69,13 @@ public class SellOrderHandler implements OrderHandler {
         }
 
         ShipStatus status = shipService.positionalStatusOf(ship);
-        if (status != ShipStatus.LANDED && status != ShipStatus.ORBITING) {
-            return OrderResult.cancelled("cannot SELL while " + status + " — ship must be at a body");
+        if (status != ShipStatus.ORBITING) {
+            return OrderResult.cancelled("cannot SELL while " + status + " — ship must be orbiting a body");
         }
 
-        CelestialBody body = celestialBodyService.findAt(ship.getX(), ship.getY()).orElse(null);
+        CelestialBody body = celestialBodyService.findFirstAdjacent(ship.getX(), ship.getY()).orElse(null);
         if (body == null) {
-            return OrderResult.cancelled("no celestial body at (" + ship.getX() + ", " + ship.getY() + ")");
+            return OrderResult.cancelled("no adjacent celestial body at (" + ship.getX() + ", " + ship.getY() + ")");
         }
 
         BodyBuyPrice price = bodyBuyPriceRepository

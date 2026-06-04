@@ -11,8 +11,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Read-side service for celestial bodies. PR 2 adds mutation (EXTRACT
- * decrements reserves, SELL reads prices) — for now this is read-only.
+ * Read-side service for celestial bodies. EXTRACT decrements reserves and SELL
+ * reads prices through their own repositories — this service exposes the bulk
+ * map fetch and the per-tile adjacency lookups callers need.
  *
  * <p>The {@link #getAll()} path fetches bodies + reserves + buy prices in three
  * queries and groups in memory. The map view polls this endpoint, so an N+1
@@ -46,12 +47,35 @@ public class CelestialBodyService {
     }
 
     /**
-     * Returns the body on the given tile, if any. Used by the LAND order
-     * handler — entity (not DTO) because the caller is another service, not
-     * the REST layer.
+     * Every celestial body Chebyshev-adjacent to {@code (x, y)} — the 8
+     * neighbouring tiles, excluding the center — in deterministic order. Used
+     * by status derivation and by the EXTRACT / SELL handlers. The caller is
+     * expected to be another service, hence the entity (not DTO) return type.
+     * List, not Optional, because a ship can be adjacent to more than one body
+     * — handlers pick one off the front; status derivation only needs "is the
+     * list non-empty".
+     *
+     * <p>The center filter matches the {@code Math.max(|dx|, |dy|) === 1}
+     * predicate the frontend's {@code bodyAtSelectedShip} uses, so backend
+     * and UI agree on which body counts as "the body the ship is orbiting"
+     * even if a ship ever ends up on a body's tile.
      */
     @Transactional(readOnly = true)
-    public Optional<CelestialBody> findAt(int x, int y) {
-        return celestialBodyRepository.findByXAndY(x, y);
+    public List<CelestialBody> findAdjacent(int x, int y) {
+        return celestialBodyRepository
+                .findByXBetweenAndYBetweenOrderByXAscYAscIdAsc(x - 1, x + 1, y - 1, y + 1)
+                .stream()
+                .filter(body -> body.getX() != x || body.getY() != y)
+                .toList();
+    }
+
+    /**
+     * Convenience for callers that just want the first adjacent body — the
+     * deterministic pick when there's a choice.
+     */
+    @Transactional(readOnly = true)
+    public Optional<CelestialBody> findFirstAdjacent(int x, int y) {
+        List<CelestialBody> adjacent = findAdjacent(x, y);
+        return adjacent.isEmpty() ? Optional.empty() : Optional.of(adjacent.get(0));
     }
 }

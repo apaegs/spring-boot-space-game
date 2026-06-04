@@ -3,7 +3,8 @@ import { ApiError } from '../../api/client'
 import type { CelestialBodyDto, ExtractMode, ResourceKind } from '../../types/api'
 
 /**
- * Modal to queue an EXTRACT order. The player picks a resource (from the body's
+ * Modal to queue an EXTRACT order against the body the ship is currently
+ * orbiting (Chebyshev-adjacent). The player picks a resource (from the body's
  * non-zero reserves) and a duration mode. The dialog tolerates an empty body
  * (no resources at all) and renders a guidance message instead of an empty
  * picker.
