@@ -243,4 +243,4 @@ Originally raised in issue #2; some are now resolved by later issues.
 2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11, superseded in #87**: the orbit-only model collapsed `LANDED`/`ORBITING`/`LAND`/`TAKE_OFF` to a single position-derived `ORBITING` (ship Chebyshev-adjacent to any body) — no order needed.
 3. ~~Number of planets and placement?~~ **Resolved in #46 + PR 1 of #80**: 40 hand-placed celestial bodies across the kind taxonomy in `V9__seed_initial_map.sql` (replaces the original V5 6-planet seed).
 4. Ship name: player-chosen or generated? Currently generated (`"<username>'s ship"`). Player-chosen deferred until there's a UI to choose.
-5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*
+5. ~~Collision: can two ships share a tile?~~ **Resolved in #88**: no. A tile holds at most one entity in v1, enforced by `UNIQUE(x, y)` on both `ships` and `celestial_bodies`, MOVE queue-time + per-tick checks, and the spawn-spiral. See the "Tile occupancy" paragraph in the Ship section.

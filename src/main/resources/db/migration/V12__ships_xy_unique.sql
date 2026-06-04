@@ -5,21 +5,53 @@
 -- race (two registrations both reading "(51,50) is free" then both inserting)
 -- can't slip a duplicate through.
 --
--- Step 1: deduplicate any existing rows so the constraint can be added.
--- The realistic state in dev / prod-light is "a handful of test ships
--- stacked on the post-V11 spawn tile (51,50)". For each tile with >1 ship,
--- the second oldest shifts to x+1, third to x+2, etc. Earth sits at (50,50)
--- and no V9 body lives between (52,50) and (94,50), so shifts are
--- collision-free for realistic stack depths.
+-- Step 1: precheck. Each duplicate row (row_number > 1 inside its (x,y)
+-- partition) gets a proposed new tile via a simple deterministic shift:
+-- new_x = LEAST(GREATEST(x + rn - 1, 0), 99). With realistic post-V11 data
+-- (a handful of test ships stacked on (51,50)) the shifts produce
+-- (52,50), (53,50), … none of which collide with bodies or other ships
+-- between (52,50) and (94,50). For any other layout (multiple distinct
+-- stacks, a stack near the eastern edge, a stack whose shift target hits
+-- a body or another ship) the precheck DO-block aborts with a clear
+-- error and the migration leaves the schema untouched. A human resolves
+-- by hand and re-runs.
 --
--- This is a best-effort dedup. If a future DB ever has multiple distinct
--- stacks that collide after the shift (e.g. 5 ships at (51,50) AND 5 ships
--- at (52,50)), the ALTER below will fail and a human will resolve it by
--- hand. With current spawn logic that scenario can't arise.
---
--- Step 2: the constraint itself. Application code translates
--- DataIntegrityViolationException matching "ships_xy_unique" into a
--- spawn-spiral retry (ShipService.spawnShip).
+-- Step 2: apply the same shift to the duplicates and add the constraint.
+-- Application code translates DataIntegrityViolationException matching
+-- "ships_xy_unique" into a spawn-spiral retry (ShipService.spawnShip).
+
+DO $$
+DECLARE
+    duplicate_count int;
+BEGIN
+    -- Project the post-shift world: keepers (rn=1) stay put, duplicates
+    -- get the deterministic shift. Add celestial_bodies. Count tiles that
+    -- would still hold more than one entity — those are the collisions
+    -- the naive shift would leave behind.
+    WITH proposed_positions AS (
+        SELECT id,
+               CASE WHEN ROW_NUMBER() OVER (PARTITION BY x, y ORDER BY created_at) = 1
+                    THEN x
+                    ELSE LEAST(GREATEST(x + ROW_NUMBER() OVER (PARTITION BY x, y ORDER BY created_at) - 1, 0), 99)
+               END AS new_x,
+               y AS new_y
+          FROM ships
+    ),
+    all_occupants AS (
+        SELECT new_x AS x, new_y AS y FROM proposed_positions
+        UNION ALL
+        SELECT x, y FROM celestial_bodies
+    )
+    SELECT COUNT(*) - COUNT(DISTINCT (x, y))
+      INTO duplicate_count
+      FROM all_occupants;
+
+    IF duplicate_count > 0 THEN
+        RAISE EXCEPTION
+            'V12 dedup precheck: % proposed ship position(s) would still collide with another ship or a celestial body after the deterministic shift. Manual cleanup required before re-running.',
+            duplicate_count;
+    END IF;
+END $$;
 
 UPDATE ships
    SET x = LEAST(GREATEST(ships.x + r.rn - 1, 0), 99)
