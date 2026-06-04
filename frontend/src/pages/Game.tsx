@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { ApiError } from '../api/client'
+import { getMe } from '../api/auth'
 import { createOrder } from '../api/orders'
 import { listBodies } from '../api/bodies'
 import { listMyShips } from '../api/ship'
@@ -63,7 +64,18 @@ export function Game() {
     const bodiesQuery = useQuery({
         queryKey: ['bodies'],
         queryFn: ({ signal }) => listBodies(signal),
-        staleTime: Infinity,
+        // Reserves/prices change as players extract/sell — refresh on the same
+        // cadence as ships so the body panel doesn't drift.
+        refetchInterval: POLL_MS,
+    })
+
+    // Credits live on the user. AuthProvider does a one-shot getMe at mount;
+    // SELL completions don't push, so we poll here to keep the header's credit
+    // readout fresh. Same cadence as the other game-loop queries.
+    const meQuery = useQuery({
+        queryKey: ['me-credits'],
+        queryFn: ({ signal }) => getMe(signal),
+        refetchInterval: POLL_MS,
     })
 
     // Stabilize the array references so {@code useMemo} below treats the
@@ -158,22 +170,27 @@ export function Game() {
         setActionMode({ type: 'targetingMove', shipId: selectedShip.id })
     }
 
-    // Surface any of the four root queries failing. Without this, a backend
+    // Surface any of the root queries failing. Without this, a backend
     // hiccup just shows an empty map + "Loading…" sidebar forever — the player
     // can't tell whether it's a slow first load or a real problem.
     const queryError =
-        shipsQuery.error ?? worldQuery.error ?? worldShipsQuery.error ?? bodiesQuery.error
+        shipsQuery.error ??
+        worldQuery.error ??
+        worldShipsQuery.error ??
+        bodiesQuery.error ??
+        meQuery.error
 
     const retryAll = () => {
         void shipsQuery.refetch()
         void worldShipsQuery.refetch()
         void worldQuery.refetch()
         void bodiesQuery.refetch()
+        void meQuery.refetch()
     }
 
     return (
         <div className={isTargetingActive ? 'game game--targeting' : 'game'}>
-            <GameHeader tick={world?.currentTick} />
+            <GameHeader tick={world?.currentTick} credits={meQuery.data?.credits} />
 
             <main className="game__main">
                 {queryError && (
@@ -223,6 +240,7 @@ export function Game() {
                         worldShips: worldShipsQuery.data,
                         bodies,
                         currentTick: world?.currentTick,
+                        currentBody: bodyAtSelectedShip(selectedShip, bodies),
                         onPickMoveTarget: startMoveTargeting,
                     })}
                 />
@@ -247,14 +265,17 @@ function resolveSelectedEntity(input: {
     worldShips: PublicShipDto[] | undefined
     bodies: CelestialBodyDto[]
     currentTick: number | undefined
+    /** The body the selected own-ship is currently at, if any. Pre-resolved by the caller from the ship's (x,y). */
+    currentBody: CelestialBodyDto | null
     onPickMoveTarget: () => void
 }): SelectedEntityPanelProps {
-    const { selection, ownShips, worldShips, bodies, currentTick, onPickMoveTarget } = input
+    const { selection, ownShips, worldShips, bodies, currentTick, currentBody, onPickMoveTarget } =
+        input
     if (!selection) return { kind: 'none' }
 
     if (selection.kind === 'ship') {
         const own = ownShips.find((s) => s.id === selection.id)
-        if (own) return { kind: 'ownShip', ship: own, currentTick, onPickMoveTarget }
+        if (own) return { kind: 'ownShip', ship: own, currentTick, currentBody, onPickMoveTarget }
         const foreign = worldShips?.find((s) => s.id === selection.id)
         if (foreign) return { kind: 'foreignShip', ship: foreign }
         return { kind: 'none' }
@@ -262,4 +283,20 @@ function resolveSelectedEntity(input: {
 
     const body = bodies.find((p) => p.id === selection.id)
     return body ? { kind: 'body', body } : { kind: 'none' }
+}
+
+/**
+ * Returns the body that occupies the ship's tile, but only when the ship's
+ * derived status says it's actually docked there. A ship drifting onto a
+ * body's tile without LAND-ing isn't "at the body" — the EXTRACT/SELL
+ * handlers would cancel anyway, so the UI shouldn't tempt the player with
+ * those affordances.
+ */
+function bodyAtSelectedShip(
+    ship: ShipDto | null,
+    bodies: CelestialBodyDto[]
+): CelestialBodyDto | null {
+    if (!ship) return null
+    if (ship.status !== 'LANDED' && ship.status !== 'ORBITING') return null
+    return bodies.find((b) => b.x === ship.x && b.y === ship.y) ?? null
 }

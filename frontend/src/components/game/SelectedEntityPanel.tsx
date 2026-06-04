@@ -5,11 +5,15 @@ import { cancelOrder, createOrder, listOrders } from '../../api/orders'
 import { renameShip } from '../../api/ship'
 import type {
     CelestialBodyDto,
+    ExtractMode,
     OrderKind,
     PublicShipDto,
+    ResourceKind,
     ShipDto,
     ShipOrderDto,
 } from '../../types/api'
+import { ExtractDialog } from './ExtractDialog'
+import { SellDialog } from './SellDialog'
 
 /**
  * Bottom of the right sidebar — the "what did you just click?" surface.
@@ -31,7 +35,14 @@ import type {
  * data source it needs is handed in.
  */
 export type SelectedEntityPanelProps =
-    | { kind: 'ownShip'; ship: ShipDto; currentTick: number | undefined; onPickMoveTarget: () => void }
+    | {
+          kind: 'ownShip'
+          ship: ShipDto
+          currentTick: number | undefined
+          /** The body at the ship's current position, if any — null when in flight. Drives the Extract/Sell affordances. */
+          currentBody: CelestialBodyDto | null
+          onPickMoveTarget: () => void
+      }
     | { kind: 'foreignShip'; ship: PublicShipDto }
     | { kind: 'body'; body: CelestialBodyDto }
     | { kind: 'none' }
@@ -67,26 +78,59 @@ export function SelectedEntityPanel(props: SelectedEntityPanelProps) {
     }
 
     if (props.kind === 'body') {
-        // PR 3 will render kind-specific visuals + the reserves/buyPrices lists.
-        // For now we keep the panel minimal so the rename lands cleanly.
+        const { body } = props
         return (
             <section className="selected-ship-panel">
                 <header className="selected-ship-panel__header">
-                    <h2>{props.body.name}</h2>
-                    <span className="selected-ship-panel__badge">{props.body.kind.toLowerCase().replace('_', ' ')}</span>
+                    <h2>{body.name}</h2>
+                    <span className="selected-ship-panel__badge">
+                        {body.kind.toLowerCase().replace('_', ' ')}
+                    </span>
                 </header>
                 <dl className="ship-info">
                     <dt>Position</dt>
                     <dd>
-                        ({props.body.x}, {props.body.y})
+                        ({body.x}, {body.y})
                     </dd>
-                    {props.body.description && (
+                    {body.description && (
                         <>
                             <dt>About</dt>
-                            <dd>{props.body.description}</dd>
+                            <dd>{body.description}</dd>
                         </>
                     )}
                 </dl>
+
+                {body.reserves.length > 0 && (
+                    <div className="body-reserves">
+                        <h3>Reserves</h3>
+                        <ul>
+                            {body.reserves.map((r) => (
+                                <li key={r.kind}>
+                                    <span className="body-reserves__kind">{r.kind}</span>
+                                    <span className="body-reserves__amount">
+                                        {r.reserve.toLocaleString('en-US')}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                {body.buyPrices.length > 0 && (
+                    <div className="body-buyers">
+                        <h3>Buys</h3>
+                        <ul>
+                            {body.buyPrices.map((p) => (
+                                <li key={p.kind}>
+                                    <span className="body-buyers__kind">{p.kind}</span>
+                                    <span className="body-buyers__price">
+                                        {p.pricePerUnit.toLocaleString('en-US')} cr/unit
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </section>
         )
     }
@@ -99,10 +143,12 @@ export function SelectedEntityPanel(props: SelectedEntityPanelProps) {
 function OwnShipPanel({
     ship,
     currentTick,
+    currentBody,
     onPickMoveTarget,
 }: {
     ship: ShipDto
     currentTick: number | undefined
+    currentBody: CelestialBodyDto | null
     onPickMoveTarget: () => void
 }) {
     const [view, setView] = useState<'info' | 'orders'>('info')
@@ -131,7 +177,11 @@ function OwnShipPanel({
 
             {view === 'info' && <OwnShipInfo ship={ship} currentTick={currentTick} />}
             {view === 'orders' && (
-                <OwnShipOrders ship={ship} onPickMoveTarget={onPickMoveTarget} />
+                <OwnShipOrders
+                    ship={ship}
+                    currentBody={currentBody}
+                    onPickMoveTarget={onPickMoveTarget}
+                />
             )}
         </section>
     )
@@ -211,31 +261,61 @@ function ShipNameEditor({ ship }: { ship: ShipDto }) {
 }
 
 function OwnShipInfo({ ship, currentTick }: { ship: ShipDto; currentTick: number | undefined }) {
+    const cargoTotal = ship.cargo.reduce((sum, c) => sum + c.qty, 0)
     return (
-        <dl className="ship-info">
-            <dt>Position</dt>
-            <dd>
-                ({ship.x}, {ship.y})
-            </dd>
-            <dt>Status</dt>
-            <dd>{ship.status.charAt(0) + ship.status.slice(1).toLowerCase()}</dd>
-            <dt>World tick</dt>
-            <dd>{currentTick ?? '—'}</dd>
-            <dt>Created</dt>
-            <dd>{new Date(ship.createdAt).toLocaleDateString()}</dd>
-        </dl>
+        <>
+            <dl className="ship-info">
+                <dt>Class</dt>
+                <dd>{ship.shipTypeName}</dd>
+                <dt>Position</dt>
+                <dd>
+                    ({ship.x}, {ship.y})
+                </dd>
+                <dt>Status</dt>
+                <dd>{ship.status.charAt(0) + ship.status.slice(1).toLowerCase()}</dd>
+                <dt>World tick</dt>
+                <dd>{currentTick ?? '—'}</dd>
+                <dt>Created</dt>
+                <dd>{new Date(ship.createdAt).toLocaleDateString()}</dd>
+            </dl>
+
+            <div className="cargo">
+                <h3>
+                    Cargo{' '}
+                    <span className="cargo__total">
+                        {cargoTotal.toLocaleString('en-US')} / {ship.cargoCapacity.toLocaleString('en-US')}
+                    </span>
+                </h3>
+                {ship.cargo.length === 0 ? (
+                    <p className="cargo__empty">Empty hold.</p>
+                ) : (
+                    <ul>
+                        {ship.cargo.map((c) => (
+                            <li key={c.resourceKind}>
+                                <span className="cargo__kind">{c.resourceKind}</span>
+                                <span className="cargo__qty">{c.qty.toLocaleString('en-US')}</span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </>
     )
 }
 
 function OwnShipOrders({
     ship,
+    currentBody,
     onPickMoveTarget,
 }: {
     ship: ShipDto
+    currentBody: CelestialBodyDto | null
     onPickMoveTarget: () => void
 }) {
     const queryClient = useQueryClient()
     const [addOpen, setAddOpen] = useState(false)
+    const [extractOpen, setExtractOpen] = useState(false)
+    const [sellOpen, setSellOpen] = useState(false)
 
     const { data: orders, isLoading } = useQuery({
         queryKey: ['orders', ship.id],
@@ -252,9 +332,24 @@ function OwnShipOrders({
         onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
     })
 
-    // LAND posts immediately — no targeting needed (lands on the current tile).
+    // LAND/TAKE_OFF post immediately — no extra UI. The auto-prereq middleware
+    // also auto-queues LAND before EXTRACT/SELL if the ship isn't at a body.
     const queueLand = useMutation({
         mutationFn: () => createOrder(ship.id, { kind: 'LAND' }),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
+    })
+    const queueTakeOff = useMutation({
+        mutationFn: () => createOrder(ship.id, { kind: 'TAKE_OFF' }),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
+    })
+    const queueExtract = useMutation({
+        mutationFn: (params: { resourceKind: ResourceKind; mode: ExtractMode }) =>
+            createOrder(ship.id, { kind: 'EXTRACT', params }),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
+    })
+    const queueSell = useMutation({
+        mutationFn: (resourceKind: ResourceKind) =>
+            createOrder(ship.id, { kind: 'SELL', params: { resourceKind } }),
         onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
     })
 
@@ -264,6 +359,12 @@ function OwnShipOrders({
             onPickMoveTarget()
         } else if (kind === 'LAND') {
             queueLand.mutate()
+        } else if (kind === 'TAKE_OFF') {
+            queueTakeOff.mutate()
+        } else if (kind === 'EXTRACT') {
+            setExtractOpen(true)
+        } else if (kind === 'SELL') {
+            setSellOpen(true)
         }
     }
 
@@ -289,12 +390,30 @@ function OwnShipOrders({
             {orders && orders.length > 0 && (
                 <ul className="orders-list">
                     {orders.map((order) => (
-                        <li key={order.id} className="order-row">
+                        <li
+                            key={order.id}
+                            className={
+                                order.autoInserted ? 'order-row order-row--auto' : 'order-row'
+                            }
+                        >
                             <span className={`order-kind order-kind--${order.kind.toLowerCase()}`}>
                                 {order.kind}
                             </span>
                             <span className="order-status">{order.status.toLowerCase()}</span>
-                            <span className="order-params">{describeParams(order)}</span>
+                            <span className="order-params">
+                                {describeParams(order)}
+                                {order.autoInserted && (
+                                    <>
+                                        {' '}
+                                        <span
+                                            className="order-auto-badge"
+                                            title="Auto-inserted as a prerequisite for the next order"
+                                        >
+                                            ↩ auto
+                                        </span>
+                                    </>
+                                )}
+                            </span>
                             <button
                                 type="button"
                                 onClick={() => cancel.mutate(order.id)}
@@ -326,6 +445,25 @@ function OwnShipOrders({
                         <button type="button" onClick={() => pickAction('LAND')}>
                             Land
                         </button>
+                        <button type="button" onClick={() => pickAction('TAKE_OFF')}>
+                            Take off
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => pickAction('EXTRACT')}
+                            disabled={!currentBody}
+                            title={currentBody ? undefined : 'Land on a body first'}
+                        >
+                            Extract
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => pickAction('SELL')}
+                            disabled={!currentBody}
+                            title={currentBody ? undefined : 'Land on a body first'}
+                        >
+                            Sell
+                        </button>
                         <button
                             type="button"
                             className="add-order__cancel"
@@ -345,6 +483,38 @@ function OwnShipOrders({
                         : 'unknown error'}
                 </p>
             )}
+            {queueTakeOff.error && (
+                <p className="form-error" role="alert">
+                    Could not take off:{' '}
+                    {queueTakeOff.error instanceof ApiError
+                        ? queueTakeOff.error.message
+                        : 'unknown error'}
+                </p>
+            )}
+
+            {currentBody && (
+                <ExtractDialog
+                    open={extractOpen}
+                    body={currentBody}
+                    onCancel={() => setExtractOpen(false)}
+                    onConfirm={async (resourceKind, mode) => {
+                        await queueExtract.mutateAsync({ resourceKind, mode })
+                        setExtractOpen(false)
+                    }}
+                />
+            )}
+            {currentBody && (
+                <SellDialog
+                    open={sellOpen}
+                    body={currentBody}
+                    cargo={ship.cargo}
+                    onCancel={() => setSellOpen(false)}
+                    onConfirm={async (resourceKind) => {
+                        await queueSell.mutateAsync(resourceKind)
+                        setSellOpen(false)
+                    }}
+                />
+            )}
         </div>
     )
 }
@@ -357,5 +527,32 @@ function describeParams(order: ShipOrderDto): string {
             return `→ (${x}, ${y})`
         }
     }
+    if (order.kind === 'EXTRACT') {
+        const resource = order.params['resourceKind']
+        const mode = order.params['mode']
+        const modeText =
+            typeof mode === 'string'
+                ? mode === 'until_cancelled'
+                    ? '∞'
+                    : mode
+                : isModeWithTicks(mode)
+                  ? `${order.progressTicks}/${mode.ticks}t`
+                  : isModeUntilFull(mode)
+                    ? 'fill'
+                    : ''
+        return typeof resource === 'string' ? `${resource} · ${modeText}` : ''
+    }
+    if (order.kind === 'SELL') {
+        const resource = order.params['resourceKind']
+        return typeof resource === 'string' ? String(resource) : ''
+    }
     return ''
+}
+
+function isModeWithTicks(v: unknown): v is { ticks: number } {
+    return typeof v === 'object' && v !== null && typeof (v as { ticks?: unknown }).ticks === 'number'
+}
+
+function isModeUntilFull(v: unknown): v is { until_full: true } {
+    return typeof v === 'object' && v !== null && (v as { until_full?: unknown }).until_full === true
 }

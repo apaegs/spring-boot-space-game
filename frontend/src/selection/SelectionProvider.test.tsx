@@ -23,6 +23,10 @@ function ship(id: string, name = id): ShipDto {
         x: 0,
         y: 0,
         shipTypeId: '00000000-0000-0000-0000-000000000001',
+        shipTypeName: 'Mothership',
+        cargoCapacity: 500,
+        extractRate: 10,
+        cargo: [],
         createdAt: '2026-01-01T00:00:00Z',
         status: 'IDLE',
     }

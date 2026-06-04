@@ -771,3 +771,257 @@
     color: #fff;
     font-weight: 500;
 }
+
+/* ----- credits readout in header ----- */
+
+.game-header__credits {
+    color: #ffd966;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    margin-left: 1rem;
+}
+
+/* ----- ship cargo (own-ship Info tab) ----- */
+
+.cargo {
+    margin: 1rem 0 0;
+}
+
+.cargo h3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    color: #cccce8;
+}
+
+.cargo__total {
+    font-variant-numeric: tabular-nums;
+    color: #8888aa;
+    font-size: 0.85rem;
+}
+
+.cargo__empty {
+    color: #8888aa;
+    font-style: italic;
+    margin: 0;
+}
+
+.cargo ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.cargo li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0.4rem;
+    background: #1c1c38;
+    border-radius: 3px;
+    font-size: 0.85rem;
+}
+
+.cargo__qty {
+    font-variant-numeric: tabular-nums;
+    color: #cccce8;
+}
+
+/* ----- body details (reserves + buyers) ----- */
+
+.body-reserves,
+.body-buyers {
+    margin: 1rem 0 0;
+}
+
+.body-reserves h3,
+.body-buyers h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    color: #cccce8;
+}
+
+.body-reserves ul,
+.body-buyers ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.body-reserves li,
+.body-buyers li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0.4rem;
+    background: #1c1c38;
+    border-radius: 3px;
+    font-size: 0.85rem;
+}
+
+.body-reserves__amount,
+.body-buyers__price {
+    font-variant-numeric: tabular-nums;
+    color: #cccce8;
+}
+
+/* ----- order auto-inserted badge + EXTRACT/SELL params ----- */
+
+.order-row--auto {
+    opacity: 0.85;
+}
+
+.order-auto-badge {
+    font-size: 0.7rem;
+    color: #8888aa;
+    background: #14142a;
+    padding: 0.05rem 0.3rem;
+    border-radius: 999px;
+    border: 1px solid #2a2a45;
+}
+
+.order-kind--extract {
+    background: #4a3a1a;
+}
+
+.order-kind--sell {
+    background: #1a4a3a;
+}
+
+.order-kind--take_off {
+    background: #3a3a45;
+}
+
+/* ----- extract / sell dialogs ----- */
+
+.extract-dialog,
+.sell-dialog {
+    background: #14142a;
+    color: #e0e0f0;
+    border: 1px solid #2a2a45;
+    border-radius: 6px;
+    padding: 1.5rem;
+    max-width: 32rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.extract-dialog::backdrop,
+.sell-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.extract-dialog h2,
+.sell-dialog h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.2rem;
+}
+
+.extract-dialog p,
+.sell-dialog p {
+    margin: 0 0 0.75rem;
+    color: #cccce8;
+    line-height: 1.4;
+}
+
+.extract-dialog fieldset,
+.sell-dialog fieldset {
+    border: 1px solid #2a2a45;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin: 0 0 0.75rem;
+}
+
+.extract-dialog legend,
+.sell-dialog legend {
+    padding: 0 0.3rem;
+    color: #8888aa;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.extract-dialog__radio,
+.sell-dialog__radio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.extract-dialog__resource-name,
+.sell-dialog__resource-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.extract-dialog__reserve {
+    color: #8888aa;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+}
+
+.sell-dialog__sale {
+    color: #cccce8;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+}
+
+.extract-dialog__ticks-input {
+    width: 4rem;
+    background: #0a0a1a;
+    color: #e0e0f0;
+    border: 1px solid #2a2a45;
+    border-radius: 3px;
+    padding: 0.1rem 0.3rem;
+    font: inherit;
+}
+
+.extract-dialog__actions,
+.sell-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.extract-dialog__actions button,
+.sell-dialog__actions button {
+    font: inherit;
+    padding: 0.4rem 0.9rem;
+    background: transparent;
+    color: #aaaacc;
+    border: 1px solid #2a2a45;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.extract-dialog__actions button:not(:disabled):hover,
+.sell-dialog__actions button:not(:disabled):hover {
+    border-color: #4a4a75;
+    color: #fff;
+}
+
+.extract-dialog__queue:not(:disabled),
+.sell-dialog__queue:not(:disabled) {
+    background: #2a3a4a;
+    color: #ccddff;
+    border-color: #3a5a7a;
+}
+
+.extract-dialog__queue:not(:disabled):hover,
+.sell-dialog__queue:not(:disabled):hover {
+    background: #3a5a7a;
+}
+
+.extract-dialog__queue:disabled,
+.sell-dialog__queue:disabled {
+    color: #555577;
+    cursor: not-allowed;
+}
