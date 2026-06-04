@@ -83,12 +83,33 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 
 **v1 order types**:
 
-| Kind  | Params                  | Behavior                                                                 |
-|-------|-------------------------|--------------------------------------------------------------------------|
-| MOVE  | `{ "x": int, "y": int }` | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival. |
-| LAND  | `{}`                    | Validate that ship is on a celestial body's tile. If yes, complete in one tick. If no, fail and CANCEL with reason. |
+| Kind     | Params                                                                                          | Behavior                                                                                                                                                                          |
+|----------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| MOVE     | `{ "x": int, "y": int }`                                                                        | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival.                                                                                                       |
+| LAND     | `{}`                                                                                            | Validate that the ship is on a celestial body's tile. If yes, complete in one tick. Status derivation reads the body's `kind` to decide LANDED vs ORBITING (GAS_GIANT → ORBITING). |
+| TAKE_OFF | `{}`                                                                                            | Validate that the ship is currently at a body (LANDED/ORBITING). One tick. Returns the ship to IDLE status (most recent completed kind is now TAKE_OFF).                          |
+| EXTRACT  | `{ "resourceKind": ResourceKind, "mode": "until_cancelled" \| { "ticks": N } \| { "until_full": true } }` | Per tick, extract `min(extract_rate, reserve, cap-current)` units of the resource into `ship_cargo`. Terminates per `mode`. Cancels if ship state ≠ resource's required extraction state. |
+| SELL     | `{ "resourceKind": ResourceKind }`                                                              | One tick. Convert all cargo of `resourceKind` to credits at the body's per-resource buy price. Deletes the cargo row. Cancels if the body doesn't buy this resource or the ship has none. |
 
-PR 2 adds `TAKE_OFF`, `EXTRACT`, and `SELL` — see issue #46's v3 design comment.
+**Auto-prerequisite insertion**. When the player POSTs an order whose preconditions
+aren't met, the API's `ShipOrderService.appendOrder` inserts the prerequisite
+into the queue *just before* the player's order, with `auto_inserted = true`
+so the UI can render an "↩ auto" marker (PR 3). The two rules:
+
+- POST `EXTRACT`/`SELL` while not at a body → prepend `LAND`.
+- POST `MOVE` while at a body → prepend `TAKE_OFF`.
+
+Decisions use `positionalStatusOf` (ignores in-flight orders) so the
+middleware's view of "at a body" matches reality even mid-queue. Handler-level
+state checks (also `positionalStatusOf`) catch multi-step queues where the
+eventual state differs — the relevant order cancels with a clear reason rather
+than silently misbehaving.
+
+`ship_orders.progress_ticks` is a per-order counter incremented by multi-tick
+handlers (currently only `EXTRACT` in `mode={ticks: N}`) every tick they make
+progress. Plain `INT` column added in V10 so Hibernate's dirty checking
+catches updates reliably — mutating the `params` JSONB Map in place is
+fragile under Hibernate's JSON handling.
 
 ### CelestialBody
 
@@ -110,7 +131,7 @@ Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and
 | `ROCKY_PLANET` | LANDED        | Common. Iron-rich, trace water and rare metal.                              |
 | `LAVA_PLANET`  | LANDED        | Rare. Heavy rare-metal yield.                                               |
 | `ICE_PLANET`   | LANDED        | Water-heavy.                                                                |
-| `GAS_GIANT`    | ORBITING      | Can't physically land; LAND resolves to ORBITING (PR 2). Hydrogen + helium. |
+| `GAS_GIANT`    | ORBITING      | Can't physically land; LAND resolves to ORBITING. Hydrogen + helium.        |
 | `ASTEROID`     | LANDED        | Many on the map. Mixed iron/water/rare-metal trace.                         |
 | `STAR`         | _neither_     | Decorative + nav landmark. No extraction, no LAND target.                   |
 
