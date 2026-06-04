@@ -332,16 +332,6 @@ function OwnShipOrders({
         onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
     })
 
-    // LAND/TAKE_OFF post immediately — no extra UI. The auto-prereq middleware
-    // also auto-queues LAND before EXTRACT/SELL if the ship isn't at a body.
-    const queueLand = useMutation({
-        mutationFn: () => createOrder(ship.id, { kind: 'LAND' }),
-        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
-    })
-    const queueTakeOff = useMutation({
-        mutationFn: () => createOrder(ship.id, { kind: 'TAKE_OFF' }),
-        onSettled: () => queryClient.invalidateQueries({ queryKey: ['orders', ship.id] }),
-    })
     const queueExtract = useMutation({
         mutationFn: (params: { resourceKind: ResourceKind; mode: ExtractMode }) =>
             createOrder(ship.id, { kind: 'EXTRACT', params }),
@@ -357,10 +347,6 @@ function OwnShipOrders({
         setAddOpen(false)
         if (kind === 'MOVE') {
             onPickMoveTarget()
-        } else if (kind === 'LAND') {
-            queueLand.mutate()
-        } else if (kind === 'TAKE_OFF') {
-            queueTakeOff.mutate()
         } else if (kind === 'EXTRACT') {
             setExtractOpen(true)
         } else if (kind === 'SELL') {
@@ -383,37 +369,19 @@ function OwnShipOrders({
             )}
             {!isLoading && orders && orders.length === 0 && (
                 <p className="orders-empty">
-                    No orders queued. Use <strong>+ Add Order</strong> below to <em>Move</em> or
-                    <em> Land</em>.
+                    No orders queued. Use <strong>+ Add Order</strong> below to <em>Move</em>,{' '}
+                    <em>Extract</em>, or <em>Sell</em>.
                 </p>
             )}
             {orders && orders.length > 0 && (
                 <ul className="orders-list">
                     {orders.map((order) => (
-                        <li
-                            key={order.id}
-                            className={
-                                order.autoInserted ? 'order-row order-row--auto' : 'order-row'
-                            }
-                        >
+                        <li key={order.id} className="order-row">
                             <span className={`order-kind order-kind--${order.kind.toLowerCase()}`}>
                                 {order.kind}
                             </span>
                             <span className="order-status">{order.status.toLowerCase()}</span>
-                            <span className="order-params">
-                                {describeParams(order)}
-                                {order.autoInserted && (
-                                    <>
-                                        {' '}
-                                        <span
-                                            className="order-auto-badge"
-                                            title="Auto-inserted as a prerequisite for the next order"
-                                        >
-                                            ↩ auto
-                                        </span>
-                                    </>
-                                )}
-                            </span>
+                            <span className="order-params">{describeParams(order)}</span>
                             <button
                                 type="button"
                                 onClick={() => cancel.mutate(order.id)}
@@ -442,17 +410,11 @@ function OwnShipOrders({
                         <button type="button" onClick={() => pickAction('MOVE')}>
                             Move
                         </button>
-                        <button type="button" onClick={() => pickAction('LAND')}>
-                            Land
-                        </button>
-                        <button type="button" onClick={() => pickAction('TAKE_OFF')}>
-                            Take off
-                        </button>
                         <button
                             type="button"
                             onClick={() => pickAction('EXTRACT')}
                             disabled={!currentBody}
-                            title={currentBody ? undefined : 'Land on a body first'}
+                            title={currentBody ? undefined : 'Move next to a body first'}
                         >
                             Extract
                         </button>
@@ -460,7 +422,7 @@ function OwnShipOrders({
                             type="button"
                             onClick={() => pickAction('SELL')}
                             disabled={!currentBody}
-                            title={currentBody ? undefined : 'Land on a body first'}
+                            title={currentBody ? undefined : 'Move next to a body first'}
                         >
                             Sell
                         </button>
@@ -474,23 +436,6 @@ function OwnShipOrders({
                     </div>
                 )}
             </div>
-
-            {queueLand.error && (
-                <p className="form-error" role="alert">
-                    Could not land:{' '}
-                    {queueLand.error instanceof ApiError
-                        ? queueLand.error.message
-                        : 'unknown error'}
-                </p>
-            )}
-            {queueTakeOff.error && (
-                <p className="form-error" role="alert">
-                    Could not take off:{' '}
-                    {queueTakeOff.error instanceof ApiError
-                        ? queueTakeOff.error.message
-                        : 'unknown error'}
-                </p>
-            )}
 
             {currentBody && (
                 <ExtractDialog

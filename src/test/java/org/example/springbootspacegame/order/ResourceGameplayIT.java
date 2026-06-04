@@ -28,19 +28,18 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * End-to-end coverage of the PR 2 gameplay handlers: LAND (with gas-giant
- * ORBITING resolution), TAKE_OFF, EXTRACT (all three duration modes), SELL,
- * and the queue-time auto-prerequisite middleware. Drives ticks directly via
- * {@link TickService#advanceTick()} so a single test deterministically walks
- * through the order processing.
+ * End-to-end coverage of the resource-loop handlers under the orbit-only
+ * model (issue #87): EXTRACT (all three duration modes) and SELL, both gated
+ * on {@code ORBITING} (Chebyshev-adjacent to a celestial body). Drives ticks
+ * directly via {@link TickService#advanceTick()} so a single test
+ * deterministically walks through the order processing.
  *
- * <p>Coordinates referenced in this file map to the V9 seed:
- * Earth (50,50, ROCKY, IRON+WATER, buys IRON+WATER), Mars (60,55, ROCKY),
- * Jupiter (30,70, GAS_GIANT, HYDROGEN+HELIUM), Sirius (90,90, STAR).
+ * <p>Coordinates referenced in this file map to the V9 seed: spawn (51,50)
+ * adjacent to Earth (50,50, ROCKY, IRON+WATER, buys IRON+WATER); Jupiter
+ * (30,70, GAS_GIANT, HYDROGEN+HELIUM).
  */
 @IntegrationTest
 class ResourceGameplayIT {
@@ -67,80 +66,59 @@ class ResourceGameplayIT {
                 .build();
     }
 
-    // ===== LAND / TAKE_OFF status derivation ===============================
+    // ===== Status derivation ================================================
 
     @Test
-    void landOnRockyBodyDerivesLandedStatus() throws Exception {
-        // Spawn is Earth (50,50, rocky). LAND completes → status LANDED.
+    void spawnAdjacentToEarthDerivesOrbiting() throws Exception {
+        // Spawn is (51,50); Earth is seeded at (50,50). Chebyshev distance = 1
+        // → status ORBITING with no orders ever queued.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "kira", "kira@example.com", "deep-space-99");
         UUID shipId = firstShipIdFor(session);
-
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
-
-        assertStatusEquals(session, shipId, "LANDED");
-    }
-
-    @Test
-    void landOnGasGiantDerivesOrbitingStatus() throws Exception {
-        // Jupiter is GAS_GIANT — LAND there resolves to ORBITING per the status
-        // derivation rule (body.kind == GAS_GIANT).
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "janeway", "janeway@example.com", "coffee-black-1");
-        UUID shipId = firstShipIdFor(session);
-
-        // MOVE to Jupiter (30,70). Spawn is (50,50); Chebyshev distance = 20.
-        postOrder(session, shipId, "MOVE", Map.of("x", 30, "y", 70));
-        for (int i = 0; i < 20; i++) tickService.advanceTick();
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
 
         assertStatusEquals(session, shipId, "ORBITING");
     }
 
     @Test
-    void takeOffAfterLandDerivesIdleStatus() throws Exception {
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "spock", "spock@example.com", "live-long-prosper");
+    void movingNextToGasGiantDerivesOrbiting() throws Exception {
+        // Jupiter is at (30,70). Move to (31,70) → adjacent → ORBITING.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "janeway", "janeway@example.com", "coffee-black-1");
         UUID shipId = firstShipIdFor(session);
 
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
-        assertStatusEquals(session, shipId, "LANDED");
+        // Spawn is (51,50); Chebyshev distance to (31,70) is 20.
+        postOrder(session, shipId, "MOVE", Map.of("x", 31, "y", 70));
+        for (int i = 0; i < 20; i++) tickService.advanceTick();
 
-        postOrder(session, shipId, "TAKE_OFF", Map.of());
-        tickService.advanceTick();
-        assertStatusEquals(session, shipId, "IDLE");
+        assertStatusEquals(session, shipId, "ORBITING");
     }
 
     @Test
-    void takeOffWhileIdleCancels() throws Exception {
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "uhura", "uhura@example.com", "channel-open-1");
+    void shipFarFromAnyBodyIsIdle() throws Exception {
+        // (10,30) has no body within Chebyshev distance 1 — nearest are Wolf 359
+        // (8,15), Hebe (35,30), Pluto (25,25), Haumea (20,40). Move there and
+        // confirm IDLE.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "spock", "spock@example.com", "live-long-prosper");
         UUID shipId = firstShipIdFor(session);
 
-        // Player is IDLE at Earth (no LAND issued). TAKE_OFF should cancel.
-        UUID orderId = postOrder(session, shipId, "TAKE_OFF", Map.of());
-        tickService.advanceTick();
+        postOrder(session, shipId, "MOVE", Map.of("x", 10, "y", 30));
+        // Chebyshev (51,50) -> (10,30) = max(41, 20) = 41 ticks.
+        for (int i = 0; i < 41; i++) tickService.advanceTick();
 
-        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.CANCELLED);
+        assertStatusEquals(session, shipId, "IDLE");
     }
 
     // ===== EXTRACT ==========================================================
 
     @Test
-    void extractIronOnEarthFillsCargoAndDecrementsReserve() throws Exception {
-        // 3 ticks of extraction on Earth → 30 IRON in cargo, reserve decreases
-        // by 30. Note: body_resources persists across tests in this class so we
-        // assert the DELTA on Earth's reserve rather than its absolute value
-        // (the IT runner doesn't re-seed bodies between tests).
+    void extractIronOrbitingEarthFillsCargoAndDecrementsReserve() throws Exception {
+        // Spawn is already ORBITING Earth. Three ticks of EXTRACT → 30 IRON
+        // in cargo and the same delta off Earth's reserve. Body reserves
+        // persist across tests, so the assertion is on the DELTA.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "miles", "miles@example.com", "transporter-1");
         UUID shipId = firstShipIdFor(session);
 
         int reserveBefore = bodyResourceRepository
                 .findByBodyIdAndResourceKind(EARTH_ID, ResourceKind.IRON)
                 .orElseThrow().getReserve();
-
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick(); // LAND completes → LANDED
 
         postOrder(session, shipId, "EXTRACT",
                 Map.of("resourceKind", "IRON", "mode", Map.of("ticks", 3)));
@@ -158,13 +136,11 @@ class ResourceGameplayIT {
     }
 
     @Test
-    void extractHydrogenWhileLandedCancels() throws Exception {
-        // HYDROGEN requires ORBITING but we're LANDED on Earth → cancel.
+    void extractHydrogenOrbitingEarthCancels() throws Exception {
+        // Earth doesn't have HYDROGEN reserves → the handler cancels the order
+        // with "no HYDROGEN" rather than silently extracting nothing.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "scotty", "scotty@example.com", "warp-core-stable");
         UUID shipId = firstShipIdFor(session);
-
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
 
         UUID extractId = postOrder(session, shipId, "EXTRACT",
                 Map.of("resourceKind", "HYDROGEN", "mode", "until_cancelled"));
@@ -175,14 +151,29 @@ class ResourceGameplayIT {
     }
 
     @Test
-    void extractUntilFullStopsAtCargoCap() throws Exception {
-        // MOTHERSHIP cargo cap = 500. Earth has 2000 IRON. Extracting at 10/tick
-        // should reach cap after 50 ticks and complete.
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "geordi", "geordi@example.com", "visor-1701-d");
+    void extractWhileNotOrbitingCancels() throws Exception {
+        // Move to a tile with no adjacent body (10,30) → IDLE → EXTRACT cancels.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "uhura", "uhura@example.com", "channel-open-1");
         UUID shipId = firstShipIdFor(session);
 
-        postOrder(session, shipId, "LAND", Map.of());
+        postOrder(session, shipId, "MOVE", Map.of("x", 10, "y", 30));
+        for (int i = 0; i < 41; i++) tickService.advanceTick();
+        // Status now IDLE (no body in Chebyshev range of (10,30)).
+
+        UUID extractId = postOrder(session, shipId, "EXTRACT",
+                Map.of("resourceKind", "IRON", "mode", "until_cancelled"));
         tickService.advanceTick();
+
+        assertThat(orderRepository.findById(extractId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void extractUntilFullStopsAtCargoCap() throws Exception {
+        // MOTHERSHIP cargo cap = 500. Earth has IRON in the thousands.
+        // Extracting at 10/tick should reach cap after 50 ticks and complete.
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "geordi", "geordi@example.com", "visor-1701-d");
+        UUID shipId = firstShipIdFor(session);
 
         UUID extractId = postOrder(session, shipId, "EXTRACT",
                 Map.of("resourceKind", "IRON", "mode", Map.of("until_full", true)));
@@ -198,15 +189,13 @@ class ResourceGameplayIT {
     // ===== SELL =============================================================
 
     @Test
-    void sellIronOnEarthAddsCreditsAndRemovesCargo() throws Exception {
-        // Earth buys IRON at 9 cr/unit (V9 seed). Fill 50 IRON, sell, expect
+    void sellIronOrbitingEarthAddsCreditsAndRemovesCargo() throws Exception {
+        // Earth buys IRON at 9 cr/unit (V9 seed). Extract 50 IRON, sell, expect
         // credits = 450, cargo row gone.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "tasha", "tasha@example.com", "yar-of-ngd-1");
         UUID shipId = firstShipIdFor(session);
         UUID userId = userIdForShip(shipId);
 
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
         postOrder(session, shipId, "EXTRACT", Map.of("resourceKind", "IRON", "mode", Map.of("ticks", 5)));
         for (int i = 0; i < 5; i++) tickService.advanceTick();
         // 50 IRON in cargo.
@@ -221,16 +210,10 @@ class ResourceGameplayIT {
 
     @Test
     void sellAtNonBuyerCancels() throws Exception {
-        // Mars (60,55) is rocky and does NOT buy WATER (V9 seed has Mars buying
-        // only IRON). Player extracts IRON on Earth (which Mars buys), flies to
-        // Mars, queues SELL for WATER — should cancel since Mars doesn't buy water.
-        // Simpler version: just try to SELL on Earth a resource Earth doesn't
-        // buy (Earth buys IRON + WATER; pick HELIUM).
+        // Earth buys IRON + WATER; queue SELL HELIUM at Earth — cancel with
+        // "does not buy HELIUM".
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "wesley", "wesley@example.com", "ensign-crusher-1");
         UUID shipId = firstShipIdFor(session);
-
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
 
         UUID sellId = postOrder(session, shipId, "SELL", Map.of("resourceKind", "HELIUM"));
         tickService.advanceTick();
@@ -244,9 +227,6 @@ class ResourceGameplayIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "data", "data@example.com", "positronic-1");
         UUID shipId = firstShipIdFor(session);
 
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
-
         UUID sellId = postOrder(session, shipId, "SELL", Map.of("resourceKind", "IRON"));
         tickService.advanceTick();
 
@@ -255,63 +235,20 @@ class ResourceGameplayIT {
                 .isEqualTo(OrderStatus.CANCELLED);
     }
 
-    // ===== Auto-prerequisite middleware =====================================
-
     @Test
-    void postExtractWhileIdleAutoPrependsLand() throws Exception {
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "barclay", "barclay@example.com", "reginald-1701-d");
-        UUID shipId = firstShipIdFor(session);
-
-        // Player IDLE at Earth; queue EXTRACT.
-        postOrder(session, shipId, "EXTRACT",
-                Map.of("resourceKind", "IRON", "mode", Map.of("ticks", 1)));
-
-        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].kind").value("LAND"))
-                .andExpect(jsonPath("$[0].autoInserted").value(true))
-                .andExpect(jsonPath("$[1].kind").value("EXTRACT"))
-                .andExpect(jsonPath("$[1].autoInserted").value(false));
-    }
-
-    @Test
-    void postMoveWhileLandedAutoPrependsTakeOff() throws Exception {
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "guinan", "guinan@example.com", "tenforward-1");
-        UUID shipId = firstShipIdFor(session);
-
-        postOrder(session, shipId, "LAND", Map.of());
-        tickService.advanceTick();
-        // Status is now LANDED.
-
-        postOrder(session, shipId, "MOVE", Map.of("x", 60, "y", 55));
-
-        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].kind").value("TAKE_OFF"))
-                .andExpect(jsonPath("$[0].autoInserted").value(true))
-                .andExpect(jsonPath("$[1].kind").value("MOVE"))
-                .andExpect(jsonPath("$[1].autoInserted").value(false));
-    }
-
-    @Test
-    void postExtractWhileAlreadyLandedNoAutoPrerequisite() throws Exception {
+    void sellWhileNotOrbitingCancels() throws Exception {
+        // MOVE far from any body, queue SELL — cancels with "must be orbiting".
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "rolaren", "rolaren@example.com", "ro-laren-bajor-1");
         UUID shipId = firstShipIdFor(session);
 
-        postOrder(session, shipId, "LAND", Map.of());
+        postOrder(session, shipId, "MOVE", Map.of("x", 10, "y", 30));
+        for (int i = 0; i < 41; i++) tickService.advanceTick();
+
+        UUID sellId = postOrder(session, shipId, "SELL", Map.of("resourceKind", "IRON"));
         tickService.advanceTick();
-        // Now LANDED — no auto-LAND should be inserted.
 
-        postOrder(session, shipId, "EXTRACT",
-                Map.of("resourceKind", "IRON", "mode", Map.of("ticks", 1)));
-
-        mockMvc.perform(get("/api/ships/{shipId}/orders", shipId).session(session).with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].kind").value("EXTRACT"))
-                .andExpect(jsonPath("$[0].autoInserted").value(false));
+        assertThat(orderRepository.findById(sellId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.CANCELLED);
     }
 
     // ===== Param validation ================================================

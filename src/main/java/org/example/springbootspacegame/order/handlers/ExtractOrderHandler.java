@@ -24,8 +24,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 
 /**
- * EXTRACT: pull a resource from the celestial body the ship is on. Multi-tick;
- * the {@code mode} param decides when it stops.
+ * EXTRACT: pull a resource from a celestial body adjacent to the ship's tile.
+ * Multi-tick; the {@code mode} param decides when it stops.
  *
  * <p>Params shape (mirrors the v3 design in issue #46):
  * <pre>{@code
@@ -35,10 +35,9 @@ import java.util.Map;
  *
  * <p>Each tick:
  * <ol>
- *   <li>Validate the ship's status against {@code resourceKind.extractionState()} —
- *       solids need {@code LANDED}, gases need {@code ORBITING}.</li>
- *   <li>Find the body's reserve row. Absent (or zero) → cancel; complete in
- *       the "hit zero mid-extraction" case.</li>
+ *   <li>Validate that the ship is {@code ORBITING} (some body is adjacent).</li>
+ *   <li>Pick the first adjacent body and find its reserve row. Absent (or zero)
+ *       → cancel; complete in the "hit zero mid-extraction" case.</li>
  *   <li>Compute {@code units = min(extractRate, reserve, cargoCap - currentTotal)}.
  *       If 0 and the mode tolerates pausing ({@code until_cancelled}), stay
  *       {@code ACTIVE}; otherwise terminate per mode.</li>
@@ -46,6 +45,11 @@ import java.util.Map;
  *   <li>Increment the order's {@code progressTicks} counter; check mode-specific
  *       termination.</li>
  * </ol>
+ *
+ * <p>When a ship is adjacent to more than one body, "the first adjacent body"
+ * is the deterministic pick from {@link CelestialBodyService#findFirstAdjacent}
+ * (sorted by {@code (x, y, id)}). The player disambiguates by MOVE-ing to a
+ * tile adjacent to only the body they want.
  *
  * <p>Param parsing tolerates either snake_case ({@code "resource_kind"}) or
  * camelCase ({@code "resourceKind"}) since the API hasn't pinned a convention
@@ -88,16 +92,15 @@ public class ExtractOrderHandler implements OrderHandler {
         }
 
         ShipStatus status = shipService.positionalStatusOf(ship);
-        if (status != resource.extractionState()) {
+        if (status != ShipStatus.ORBITING) {
             return OrderResult.cancelled(
-                    resource + " requires ship state " + resource.extractionState()
-                            + ", but ship is " + status);
+                    "cannot EXTRACT while " + status + " — ship must be orbiting a body");
         }
 
-        CelestialBody body = celestialBodyService.findAt(ship.getX(), ship.getY()).orElse(null);
+        CelestialBody body = celestialBodyService.findFirstAdjacent(ship.getX(), ship.getY()).orElse(null);
         if (body == null) {
-            // Status said LANDED/ORBITING but no body present — out of sync.
-            return OrderResult.cancelled("no celestial body at (" + ship.getX() + ", " + ship.getY() + ")");
+            // ORBITING but no adjacent body — out of sync, shouldn't happen.
+            return OrderResult.cancelled("no adjacent celestial body at (" + ship.getX() + ", " + ship.getY() + ")");
         }
 
         BodyResource reserveRow = bodyResourceRepository

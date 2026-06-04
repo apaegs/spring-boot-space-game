@@ -37,22 +37,6 @@ public interface ShipOrderRepository extends JpaRepository<ShipOrder, UUID> {
     boolean existsByShipIdAndStatusIn(UUID shipId, java.util.Collection<OrderStatus> statuses);
 
     /**
-     * The most recently completed order for a ship. Used to derive
-     * {@link org.example.springbootspacegame.ship.ShipStatus#LANDED}: a ship is
-     * LANDED when its last completed order was a LAND.
-     */
-    Optional<ShipOrder> findFirstByShipIdAndStatusOrderByCompletedAtDesc(UUID shipId, OrderStatus status);
-
-    /**
-     * The most recently completed order of one of the given kinds. Used by
-     * status derivation to find the most recent {@code LAND} or {@code TAKE_OFF}
-     * — whichever happened later decides whether the ship is at a body
-     * ({@code LANDED}/{@code ORBITING}) or in flight ({@code IDLE}/{@code MOVING}).
-     */
-    Optional<ShipOrder> findFirstByShipIdAndStatusAndKindInOrderByCompletedAtDesc(
-            UUID shipId, OrderStatus status, java.util.Collection<OrderKind> kinds);
-
-    /**
      * Distinct ship IDs that have at least one order in any of the given statuses.
      * Used by the tick processor to scope "which ships need processing this tick"
      * to just the ones with queued work — most ships idle most of the time.

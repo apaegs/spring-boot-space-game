@@ -3,9 +3,7 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
-import org.example.springbootspacegame.body.CelestialBodyKind;
 import org.example.springbootspacegame.body.CelestialBodyService;
-import org.example.springbootspacegame.order.OrderKind;
 import org.example.springbootspacegame.order.OrderStatus;
 import org.example.springbootspacegame.order.ShipOrderRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -21,11 +19,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ShipService {
 
-    // Center of the grid. Hard-coded for v1 — deterministic for tests and a
-    // single source of truth for "where new players appear". Grid bounds live
-    // in WorldConstants; spawn point is a separate game-design choice, not
-    // derived from grid size.
-    static final int SPAWN_X = 50;
+    // One tile east of Earth (seeded at 50,50 in V9). Adjacent to Earth so a
+    // fresh player's mothership derives ORBITING immediately — no LAND order
+    // needed (issue #87, orbit-only model). Deterministic for tests; (51,50)
+    // is empty in the V9 seed so multiple spawns just stack there until the
+    // per-tile collision check (#88) lands.
+    static final int SPAWN_X = 51;
     static final int SPAWN_Y = 50;
 
     private static final List<OrderStatus> ACTIVE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.ACTIVE);
@@ -163,30 +162,14 @@ public class ShipService {
     }
 
     /**
-     * "Where is the ship sitting?" — LANDED / ORBITING / IDLE only, ignoring
-     * whatever ACTIVE order is in flight. Used by order handlers
-     * (TAKE_OFF / EXTRACT / SELL) and the auto-prerequisite middleware to ask
-     * the only question they actually care about: <i>is the ship at a body</i>.
-     *
-     * <p>Without this, a handler calling {@link #statusOf} from inside its own
-     * {@code processOneTick} would see its own ACTIVE order as a queued
-     * activity and incorrectly classify the ship as {@code MOVING}.
+     * "Where is the ship sitting?" — {@code ORBITING} if at least one
+     * celestial body is on a Chebyshev-adjacent tile, {@code IDLE} otherwise.
+     * Ignores any in-flight order so a handler can call this on its own ship
+     * mid-tick without seeing itself as {@code MOVING}.
      */
     public ShipStatus positionalStatusOf(Ship ship) {
-        return shipOrderRepository
-                .findFirstByShipIdAndStatusAndKindInOrderByCompletedAtDesc(
-                        ship.getId(), OrderStatus.COMPLETED,
-                        java.util.List.of(OrderKind.LAND, OrderKind.TAKE_OFF))
-                .map(o -> {
-                    if (o.getKind() == OrderKind.TAKE_OFF) {
-                        return ShipStatus.IDLE;
-                    }
-                    return celestialBodyService.findAt(ship.getX(), ship.getY())
-                            .map(body -> body.getKind() == CelestialBodyKind.GAS_GIANT
-                                    ? ShipStatus.ORBITING
-                                    : ShipStatus.LANDED)
-                            .orElse(ShipStatus.IDLE);
-                })
+        return celestialBodyService.findFirstAdjacent(ship.getX(), ship.getY())
+                .map(b -> ShipStatus.ORBITING)
                 .orElse(ShipStatus.IDLE);
     }
 
@@ -195,19 +178,12 @@ public class ShipService {
      *
      * <ul>
      *   <li>{@code MOVING}   — ship has at least one PENDING or ACTIVE order</li>
-     *   <li>{@code LANDED}   — last completed LAND/TAKE_OFF was LAND, and the ship is currently on a non-gas-giant body</li>
-     *   <li>{@code ORBITING} — last completed LAND/TAKE_OFF was LAND, and the body it's on is a {@code GAS_GIANT}</li>
-     *   <li>{@code IDLE}     — anything else (no LAND ever, last was TAKE_OFF, or LAND but ship has since moved off the body)</li>
+     *   <li>{@code ORBITING} — no active orders AND at least one celestial body is on a Chebyshev-adjacent tile</li>
+     *   <li>{@code IDLE}     — no active orders AND no adjacent body</li>
      * </ul>
      *
-     * <p>The "LANDED vs ORBITING" choice is read-time, not stored — it's a
-     * pure function of the body's {@code kind} at the ship's current position.
-     * Means a body's kind change would retroactively re-classify the ship's
-     * state (impossible in v1, but the model handles it).
-     *
-     * <p>LAND is also intentionally order-history-based, not coordinate-based.
-     * A ship that drifts onto a body's tile without LAND-ing is still IDLE —
-     * matching the domain rule that arrival is an explicit action.
+     * <p>Position-derived: a ship that drifts adjacent to a body is ORBITING
+     * without any explicit order — matches the orbit-only model from #87.
      *
      * <p>Must be called within an active transaction so the repository calls
      * participate in the same snapshot.

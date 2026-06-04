@@ -5,34 +5,29 @@ package org.example.springbootspacegame.body;
  * across the 100×100 grid; the design body of issue #46 (v3 comment) lays out
  * the yield profile per kind.
  *
- * <p>The {@code LAND} order handler (updated in PR 2) reads the kind to decide
- * which {@code ShipStatus} the ship arrives in — most kinds resolve to
- * {@code LANDED}, but {@link #GAS_GIANT} resolves to {@code ORBITING} since
- * you can't physically land on a gas giant.
+ * <p>Kind is descriptive only — it drives the seeded resource/buy-price matrix
+ * but no longer changes ship-state derivation. Per the orbit-only model (#87)
+ * any ship Chebyshev-adjacent to any kind of body is {@code ORBITING}; the
+ * "you can't land on a gas giant" intuition is now expressed by ships never
+ * sitting on a body's tile at all.
  */
 public enum CelestialBodyKind {
 
-    /** Common. Iron-rich, trace water and rare metal. Land. */
+    /** Common. Iron-rich, trace water and rare metal. */
     ROCKY_PLANET,
 
-    /** Rare. Heavy rare-metal yield; some iron. Land. */
+    /** Rare. Heavy rare-metal yield; some iron. */
     LAVA_PLANET,
 
-    /** Water-heavy; occasional hydrogen seep. Land. */
+    /** Water-heavy; occasional hydrogen seep. */
     ICE_PLANET,
 
-    /**
-     * Hydrogen + helium atmosphere. {@code LAND} resolves to {@code ORBITING}
-     * here — you can't physically land on a gas giant.
-     */
+    /** Hydrogen + helium atmosphere. */
     GAS_GIANT,
 
-    /** Small, many on the map. Mixed iron/water/rare-metal trace. Land. */
+    /** Small, many on the map. Mixed iron/water/rare-metal trace. */
     ASTEROID,
 
-    /**
-     * Decorative + navigation landmark in v1. No resources to extract; no
-     * arrival action.
-     */
+    /** Decorative + navigation landmark in v1. No resources to extract. */
     STAR
 }

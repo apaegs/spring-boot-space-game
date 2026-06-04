@@ -73,7 +73,7 @@ export type ResourceKind = 'IRON' | 'WATER' | 'HYDROGEN' | 'HELIUM' | 'RARE_META
 
 // --- ship ---
 
-export type ShipStatus = 'IDLE' | 'MOVING' | 'LANDED' | 'ORBITING'
+export type ShipStatus = 'IDLE' | 'MOVING' | 'ORBITING'
 
 export type ShipDto = {
     id: string
@@ -130,11 +130,7 @@ export type WorldDto = {
 
 // --- celestial bodies ---
 
-/**
- * Body taxonomy. {@code STAR} is decorative — no extraction, no LAND target.
- * {@code GAS_GIANT} ships will end up in {@code ORBITING} rather than
- * {@code LANDED} after the PR 2 LAND handler update.
- */
+/** Body taxonomy. {@code STAR} is decorative — no extraction, just a landmark. */
 export type CelestialBodyKind =
     | 'ROCKY_PLANET'
     | 'LAVA_PLANET'
@@ -168,7 +164,7 @@ export type CelestialBodyDto = {
 
 // --- orders ---
 
-export type OrderKind = 'MOVE' | 'LAND' | 'TAKE_OFF' | 'EXTRACT' | 'SELL'
+export type OrderKind = 'MOVE' | 'EXTRACT' | 'SELL'
 export type OrderStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
 
 /**
@@ -196,8 +192,6 @@ export type ShipOrderDto = {
     kind: OrderKind
     params: Record<string, unknown>
     status: OrderStatus
-    /** True iff the auto-prerequisite middleware inserted this order. UI renders an "↩ auto" badge. */
-    autoInserted: boolean
     /** Counter incremented by multi-tick handlers (currently only EXTRACT in `mode={ticks: N}`). */
     progressTicks: number
     createdAt: string

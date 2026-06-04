@@ -642,10 +642,6 @@
     color: white;
 }
 
-.order-kind--land {
-    background: #1565c0;
-}
-
 .order-status {
     color: #8888aa;
     font-size: 0.8rem;
@@ -871,20 +867,7 @@
     color: #cccce8;
 }
 
-/* ----- order auto-inserted badge + EXTRACT/SELL params ----- */
-
-.order-row--auto {
-    opacity: 0.85;
-}
-
-.order-auto-badge {
-    font-size: 0.7rem;
-    color: #8888aa;
-    background: #14142a;
-    padding: 0.05rem 0.3rem;
-    border-radius: 999px;
-    border: 1px solid #2a2a45;
-}
+/* ----- EXTRACT/SELL params ----- */
 
 .order-kind--extract {
     background: #4a3a1a;
@@ -892,10 +875,6 @@
 
 .order-kind--sell {
     background: #1a4a3a;
-}
-
-.order-kind--take_off {
-    background: #3a3a45;
 }
 
 /* ----- extract / sell dialogs ----- */

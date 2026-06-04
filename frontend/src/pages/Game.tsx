@@ -286,17 +286,22 @@ function resolveSelectedEntity(input: {
 }
 
 /**
- * Returns the body that occupies the ship's tile, but only when the ship's
- * derived status says it's actually docked there. A ship drifting onto a
- * body's tile without LAND-ing isn't "at the body" — the EXTRACT/SELL
- * handlers would cancel anyway, so the UI shouldn't tempt the player with
- * those affordances.
+ * Returns the body the ship is currently orbiting — Chebyshev-adjacent — when
+ * one exists. Drives the Extract/Sell affordances: those handlers operate on
+ * the first adjacent body, so the dialogs need the same pick.
+ *
+ * <p>Sort matches the backend's {@code findFirstAdjacent} order
+ * ({@code (x, y, id)}) so the UI and server agree on which body Extract/Sell
+ * will hit when the ship is adjacent to more than one.
  */
 function bodyAtSelectedShip(
     ship: ShipDto | null,
     bodies: CelestialBodyDto[]
 ): CelestialBodyDto | null {
     if (!ship) return null
-    if (ship.status !== 'LANDED' && ship.status !== 'ORBITING') return null
-    return bodies.find((b) => b.x === ship.x && b.y === ship.y) ?? null
+    if (ship.status !== 'ORBITING') return null
+    const adjacent = bodies
+        .filter((b) => Math.max(Math.abs(b.x - ship.x), Math.abs(b.y - ship.y)) === 1)
+        .sort((a, b) => a.x - b.x || a.y - b.y || a.id.localeCompare(b.id))
+    return adjacent[0] ?? null
 }

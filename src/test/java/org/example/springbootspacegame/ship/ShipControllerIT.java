@@ -61,7 +61,7 @@ class ShipControllerIT {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").isNotEmpty())
                 .andExpect(jsonPath("$[0].name").value(username + "'s ship"))
-                .andExpect(jsonPath("$[0].x").value(50))
+                .andExpect(jsonPath("$[0].x").value(51))
                 .andExpect(jsonPath("$[0].y").value(50))
                 .andExpect(jsonPath("$[0].createdAt").isNotEmpty());
     }
@@ -232,14 +232,15 @@ class ShipControllerIT {
     // --- status ---
 
     @Test
-    void newShipWithNoOrdersIsIdle() throws Exception {
-        // A freshly spawned ship has no completed orders, so LANDED requires an
-        // explicit LAND order — it must be IDLE until one completes.
+    void newShipWithNoOrdersIsOrbiting() throws Exception {
+        // A freshly spawned ship sits at (51,50) — Chebyshev-adjacent to Earth
+        // (50,50) — so it derives ORBITING immediately under the orbit-only
+        // model (#87). No orders needed.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-spawn", "status-spawn@example.com", "password-spawn1");
 
         mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("IDLE"));
+                .andExpect(jsonPath("$[0].status").value("ORBITING"));
     }
 
     @Test
@@ -268,42 +269,27 @@ class ShipControllerIT {
     }
 
     @Test
-    void shipOffBodyWithNoOrdersIsIdle() throws Exception {
-        // Move the ship one tile off Earth (50,50) → (51,50), then confirm
-        // there are no pending orders and status is IDLE (not on a body).
+    void shipFarFromAnyBodyIsIdle() throws Exception {
+        // Move to (10,30), which has no celestial body within Chebyshev
+        // distance 1 (V9 seed). With the MOVE complete and no other orders,
+        // status derives IDLE.
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-idle", "status-idle@example.com", "password-idle1");
         String shipId = readFirstShipId(session);
 
         mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "MOVE", "params", Map.of("x", 51, "y", 50)))))
+                                Map.of("kind", "MOVE", "params", Map.of("x", 10, "y", 30)))))
                 .andExpect(status().isCreated());
 
-        tickService.advanceTick(); // MOVE completes — ship at (51,50), no body there
+        // Spawn (51,50) -> (10,30) is max(41, 20) = 41 ticks of MOVE.
+        for (int i = 0; i < 41; i++) {
+            tickService.advanceTick();
+        }
 
         mockMvc.perform(get("/api/ships").session(session).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("IDLE"));
-    }
-
-    @Test
-    void shipLandedOnBodyIsLanded() throws Exception {
-        // Spawn is at (50,50) where Earth is seeded (V9). Queue LAND, fire one
-        // tick so the order completes, then check status = LANDED.
-        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "status-land", "status-land@example.com", "password-land1");
-        String shipId = readFirstShipId(session);
-
-        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("kind", "LAND", "params", Map.of()))))
-                .andExpect(status().isCreated());
-
-        tickService.advanceTick(); // LAND order completes
-
-        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("LANDED"));
     }
 
     // --- helpers ---
