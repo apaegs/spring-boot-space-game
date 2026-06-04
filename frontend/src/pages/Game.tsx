@@ -170,17 +170,22 @@ export function Game() {
         setActionMode({ type: 'targetingMove', shipId: selectedShip.id })
     }
 
-    // Surface any of the four root queries failing. Without this, a backend
+    // Surface any of the root queries failing. Without this, a backend
     // hiccup just shows an empty map + "Loading…" sidebar forever — the player
     // can't tell whether it's a slow first load or a real problem.
     const queryError =
-        shipsQuery.error ?? worldQuery.error ?? worldShipsQuery.error ?? bodiesQuery.error
+        shipsQuery.error ??
+        worldQuery.error ??
+        worldShipsQuery.error ??
+        bodiesQuery.error ??
+        meQuery.error
 
     const retryAll = () => {
         void shipsQuery.refetch()
         void worldShipsQuery.refetch()
         void worldQuery.refetch()
         void bodiesQuery.refetch()
+        void meQuery.refetch()
     }
 
     return (

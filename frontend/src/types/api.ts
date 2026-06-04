@@ -28,8 +28,16 @@
  *   OrderStatus          → order/OrderStatus.java
  *   ShipOrderDto         → order/ShipOrderDto.java
  *   CreateOrderRequest   → order/CreateOrderRequest.java
+ *   ExtractMode          → order/handlers/ExtractOrderHandler.java (parseMode contract; no Java DTO)
+ *   ExtractParams        → order/handlers/ExtractOrderHandler.java (params shape; no Java DTO)
+ *   SellParams           → order/handlers/SellOrderHandler.java   (params shape; no Java DTO)
  *
  * Paths are relative to src/main/java/org/example/springbootspacegame/.
+ *
+ * The {@code Extract*} / {@code SellParams} types document the JSONB params
+ * shape — they have no Java DTO counterpart; the contract is enforced at
+ * parse time inside the matching handler. Update both sides together when
+ * the shape changes.
  */
 
 // --- auth ---

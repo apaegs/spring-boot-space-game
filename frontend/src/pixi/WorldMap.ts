@@ -443,9 +443,11 @@ export class WorldMap {
                     : WorldMap.MARKER_MAX_HALF
 
             const dot = new Graphics()
-            // Visible disc capped at {@link MARKER_MAX_HALF} so it can't draw
-            // past its tile. The transparent hit area stays large for click
-            // accessibility at world zoom — only the visible bound is capped.
+            // Visible disc is bounded so it can't draw past its tile —
+            // asteroids use a smaller cap (~55% of MARKER_MAX_HALF) to read as
+            // physically smaller objects, other kinds use the full cap. The
+            // transparent hit area below stays large for click accessibility
+            // at world zoom regardless of the visible bound.
             dot.circle(px, py, 10)
             dot.fill({ color, alpha: 0 })
             dot.circle(px, py, visibleHalf)

@@ -37,13 +37,29 @@ export function ExtractDialog({
             setModeKind('until_cancelled')
             setTicks(50)
             setError(null)
+            // Reset submitting too — a previous open that resolved successfully
+            // would have left this `true` since onConfirm closed the dialog
+            // before the success branch could clear it.
+            setSubmitting(false)
         } else if (!open && dialog.open) {
             dialog.close()
         }
     }, [open, body.reserves])
 
     const available = body.reserves.filter((r) => r.reserve > 0)
-    const canExtract = resource !== null && (modeKind !== 'ticks' || ticks > 0) && !submitting
+    // If body.reserves changes while the dialog is open and the currently
+    // selected resource drops to zero (or disappears), reset to the first
+    // still-available one. Without this, the player could submit a stale
+    // resource that the handler would just cancel.
+    useEffect(() => {
+        if (!open) return
+        if (resource !== null && !available.some((r) => r.kind === resource)) {
+            setResource(available[0]?.kind ?? null)
+        }
+    }, [open, available, resource])
+
+    const hasValidSelection = resource !== null && available.some((r) => r.kind === resource)
+    const canExtract = hasValidSelection && (modeKind !== 'ticks' || ticks > 0) && !submitting
 
     const submit = async () => {
         if (!canExtract || resource === null) return
@@ -58,8 +74,12 @@ export function ExtractDialog({
         try {
             await onConfirm(resource, mode)
         } catch (e) {
-            setSubmitting(false)
             setError(e instanceof ApiError && e.message ? e.message : 'Could not queue extract.')
+        } finally {
+            // Always clear, even on success — caller closes the dialog but
+            // we may remain mounted (the parent doesn't unmount on close),
+            // so the next open would otherwise replay a stuck "Queueing…" state.
+            setSubmitting(false)
         }
     }
 

@@ -44,12 +44,25 @@ export function SellDialog({
             dialog.showModal()
             setResource(offers[0]?.kind ?? null)
             setError(null)
+            // Mirror ExtractDialog — clear submitting on every fresh open so a
+            // previous successful submit doesn't leave the actions stuck.
+            setSubmitting(false)
         } else if (!open && dialog.open) {
             dialog.close()
         }
     }, [open, offers])
 
-    const canSell = resource !== null && !submitting
+    // If cargo or buyPrices change while the dialog is open and the currently
+    // selected resource isn't among the offers anymore, reset.
+    useEffect(() => {
+        if (!open) return
+        if (resource !== null && !offers.some((o) => o.kind === resource)) {
+            setResource(offers[0]?.kind ?? null)
+        }
+    }, [open, offers, resource])
+
+    const hasValidSelection = resource !== null && offers.some((o) => o.kind === resource)
+    const canSell = hasValidSelection && !submitting
 
     const submit = async () => {
         if (!canSell || resource === null) return
@@ -58,8 +71,9 @@ export function SellDialog({
         try {
             await onConfirm(resource)
         } catch (e) {
-            setSubmitting(false)
             setError(e instanceof ApiError && e.message ? e.message : 'Could not queue sell.')
+        } finally {
+            setSubmitting(false)
         }
     }
 

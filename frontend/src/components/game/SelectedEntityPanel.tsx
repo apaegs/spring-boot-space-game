@@ -400,15 +400,20 @@ function OwnShipOrders({
                                 {order.kind}
                             </span>
                             <span className="order-status">{order.status.toLowerCase()}</span>
-                            <span className="order-params">{describeParams(order)}</span>
-                            {order.autoInserted && (
-                                <span
-                                    className="order-auto-badge"
-                                    title="Auto-inserted as a prerequisite for the next order"
-                                >
-                                    ↩ auto
-                                </span>
-                            )}
+                            <span className="order-params">
+                                {describeParams(order)}
+                                {order.autoInserted && (
+                                    <>
+                                        {' '}
+                                        <span
+                                            className="order-auto-badge"
+                                            title="Auto-inserted as a prerequisite for the next order"
+                                        >
+                                            ↩ auto
+                                        </span>
+                                    </>
+                                )}
+                            </span>
                             <button
                                 type="button"
                                 onClick={() => cancel.mutate(order.id)}
