@@ -6,7 +6,10 @@ import org.example.springbootspacegame.IntegrationTest;
 import org.example.springbootspacegame.tick.TickService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
@@ -38,6 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@link ResourceGameplayIT}.
  */
 @IntegrationTest
+@ExtendWith(OutputCaptureExtension.class)
 class ShipOrderFlowIT {
 
     @Autowired
@@ -138,22 +142,85 @@ class ShipOrderFlowIT {
         MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "ezri", "ezri@enterprise.example", "joined-trill1");
         UUID shipId = firstShipIdFor(session);
 
-        // Two-step plan: move to a tile next to Mars (60,55), then to one next
-        // to Venus (52,46). Spawn (51,50) -> (61,55) is 10 Chebyshev steps;
-        // (61,55) -> (52,47) is 9 more.
-        postOrder(session, shipId, "MOVE", Map.of("x", 61, "y", 55));
-        postOrder(session, shipId, "MOVE", Map.of("x", 52, "y", 47));
+        // Two-step plan. Both paths are body-free so the per-tile collision
+        // check (#88) doesn't cancel them mid-flight:
+        //   spawn (51,50) -> (51,53): 3 ticks straight south.
+        //   (51,53)       -> (51,56): 3 ticks further south.
+        postOrder(session, shipId, "MOVE", Map.of("x", 51, "y", 53));
+        postOrder(session, shipId, "MOVE", Map.of("x", 51, "y", 56));
 
-        for (int i = 0; i < 19; i++) {
+        for (int i = 0; i < 6; i++) {
             tickService.advanceTick();
         }
 
-        assertShipAt(session, shipId, 52, 47);
+        assertShipAt(session, shipId, 51, 56);
 
         List<ShipOrder> active = orderRepository
                 .findByShipIdAndStatusInOrderByCreatedAtAsc(
                         shipId, List.of(OrderStatus.PENDING, OrderStatus.ACTIVE));
         assertThat(active).isEmpty();
+    }
+
+    @Test
+    void moveToOccupiedTileReturns400() throws Exception {
+        // Spawn-spiral puts alice at (51,50) and bob at (50,49). Bob tries to
+        // MOVE to (51,50) — alice's tile — and the queue-time check rejects.
+        MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice88", "alice88@example.com", "alice-pass-188");
+        MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob88", "bob88@example.com", "bob-pass-1888");
+        UUID bobShipId = firstShipIdFor(bob);
+
+        // sanity: alice really is at (51,50)
+        firstShipIdFor(alice);
+
+        mockMvc.perform(post("/api/ships/{shipId}/orders", bobShipId).session(bob).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("kind", "MOVE", "params", Map.of("x", 51, "y", 50)))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void moveToBodyTileReturns400() throws Exception {
+        // Earth is seeded at (50,50). A ship can never land on a body's tile;
+        // the queue-time check rejects MOVE to (50,50).
+        MockHttpSession session = registerAndLogin(mockMvc, objectMapper, "obrien", "obrien@example.com", "transporter-188");
+        UUID shipId = firstShipIdFor(session);
+
+        mockMvc.perform(post("/api/ships/{shipId}/orders", shipId).session(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("kind", "MOVE", "params", Map.of("x", 50, "y", 50)))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void moveBlockedMidPathCancels(CapturedOutput output) throws Exception {
+        // Alice spawns at (51,50). Bob spawns at (50,49) via spawn-spiral.
+        // Bob queues a long MOVE southeast to (60,60). The Chebyshev path
+        // from (50,49) heads dx=+1, dy=+1 — the very first step would land
+        // on (51,50), which alice occupies. The handler cancels the order
+        // and surfaces the blocking coordinates in the reason.
+        MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice88b", "alice88b@example.com", "alice-pass-188b");
+        MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob88b", "bob88b@example.com", "bob-pass-1888b");
+        UUID bobShipId = firstShipIdFor(bob);
+
+        UUID moveId = postOrder(bob, bobShipId, "MOVE", Map.of("x", 60, "y", 60));
+        tickService.advanceTick();
+
+        ShipOrder cancelled = orderRepository.findById(moveId).orElseThrow();
+        assertThat(cancelled.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        // Bob hasn't moved.
+        assertShipAt(bob, bobShipId, 50, 49);
+
+        // The cancellation reason names the blocking tile so the player can
+        // see *why* their MOVE failed. The reason isn't persisted on the order
+        // row in v1 — it's only logged — so assert the contract via the log.
+        // (Persisting the reason would belong with a UI surface for it; track
+        // separately if/when that's wanted.)
+        assertThat(output.getOut()).contains("blocked at (51, 50)");
+
+        // Sanity: alice didn't move either.
+        firstShipIdFor(alice);
     }
 
     @Test

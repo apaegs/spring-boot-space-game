@@ -68,12 +68,57 @@ class ShipControllerIT {
 
     @Test
     void twoUsersGetTwoDifferentShips() throws Exception {
+        // Per-tile collision (issue #88): the second registration can't share
+        // alice's spawn tile, so the spawn-spiral picks the next ring tile.
+        // Alice lands on the preferred (51,50). The first candidate in the
+        // r=1 ring (deterministic dy,dx walk) is (50,49) — northwest. Bob
+        // lands there.
         MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice", "alice@example.com", "password-alice-1");
         MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob", "bob@example.com", "password-bob-12");
 
         String aliceShipId = readFirstShipId(alice);
         String bobShipId = readFirstShipId(bob);
         assertNotEquals(aliceShipId, bobShipId);
+
+        mockMvc.perform(get("/api/ships").session(alice).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].x").value(51))
+                .andExpect(jsonPath("$[0].y").value(50));
+        mockMvc.perform(get("/api/ships").session(bob).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].x").value(50))
+                .andExpect(jsonPath("$[0].y").value(49));
+    }
+
+    @Test
+    void spawnSpiralsAroundEarthWhenContested() throws Exception {
+        // Register five users in sequence. The deterministic spiral walks
+        // rings outward; the first 5 spawn tiles per (dy,dx) iteration:
+        //   alice: (51,50)             — r=0
+        //   bob:   (50,49)             — r=1, dy=-1, dx=-1
+        //   carol: (51,49)             — r=1, dy=-1, dx=0
+        //   dave:  (52,49)             — r=1, dy=-1, dx=+1
+        //   ellen: (50,50) is Earth, skipped; next dx=0 (51,50) taken;
+        //          (52,50) free → ellen at (52,50)
+        // Each tile must be unique (UNIQUE(x,y) constraint).
+        MockHttpSession alice = registerAndLogin(mockMvc, objectMapper, "alice5", "alice5@example.com", "password-aaa-15");
+        MockHttpSession bob = registerAndLogin(mockMvc, objectMapper, "bob5", "bob5@example.com", "password-bbb-15");
+        MockHttpSession carol = registerAndLogin(mockMvc, objectMapper, "carol5", "carol5@example.com", "password-ccc-15");
+        MockHttpSession dave = registerAndLogin(mockMvc, objectMapper, "dave5", "dave5@example.com", "password-ddd-15");
+        MockHttpSession ellen = registerAndLogin(mockMvc, objectMapper, "ellen5", "ellen5@example.com", "password-eee-15");
+
+        assertSpawnAt(alice, 51, 50);
+        assertSpawnAt(bob, 50, 49);
+        assertSpawnAt(carol, 51, 49);
+        assertSpawnAt(dave, 52, 49);
+        assertSpawnAt(ellen, 52, 50);
+    }
+
+    private void assertSpawnAt(MockHttpSession session, int x, int y) throws Exception {
+        mockMvc.perform(get("/api/ships").session(session).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].x").value(x))
+                .andExpect(jsonPath("$[0].y").value(y));
     }
 
     @Test

@@ -20,4 +20,12 @@ public interface CelestialBodyRepository extends JpaRepository<CelestialBody, UU
      */
     List<CelestialBody> findByXBetweenAndYBetweenOrderByXAscYAscIdAsc(
             int minX, int maxX, int minY, int maxY);
+
+    /**
+     * "Is there a body on this tile?" — backs the per-tile collision rule
+     * (issue #88). Bodies are stationary so this is an immovable obstacle for
+     * MOVE destinations and spawn candidates. The {@code celestial_bodies_xy_unique}
+     * index makes it a single index seek.
+     */
+    boolean existsByXAndY(int x, int y);
 }

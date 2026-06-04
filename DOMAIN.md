@@ -58,7 +58,12 @@ A player-controlled vessel. **A User can have any number of Ships** (the auto-cr
 
 **Position vs. orders**: a ship is at a single tile `(x, y)`. What it's currently *doing* lives in the order queue (see `ShipOrder` below), not on the ship row. Earlier v1 drafts had `destination_x/y` columns directly on the ship; those were dropped in V4 when the orders queue replaced them.
 
-**Spawn**: every new ship — auto-created or via `POST /api/ships` — starts at `(51, 50)` (see `ShipService.SPAWN_X/Y`). Hard-coded for v1 — deterministic for tests and a single source of truth. Earth is seeded at `(50, 50)`, one tile west, so a fresh player's mothership starts Chebyshev-adjacent to Earth and the status derivation puts it in `ORBITING` immediately without any explicit order. Spawn collisions on `(51, 50)` are tolerated until per-tile collision (#88) lands.
+**Spawn**: every new ship — auto-created or via `POST /api/ships` — prefers `(51, 50)` (see `ShipService.SPAWN_X/Y`). When that tile is taken (per-tile collision rule, see below), the spawn-spiral walks outward in Chebyshev rings up to radius 10 (441 candidate tiles around Earth) until a free tile is found. Past the cap → 503. The deterministic ring walk is `(dy, dx)` order, so the second contested spawn lands at `(50, 49)`, third at `(51, 49)`, fourth at `(52, 49)`. Earth at `(50, 50)` is skipped by the body-occupancy check during the walk.
+
+**Tile occupancy**: at most one entity (ship or celestial body) per tile (issue #88). Enforced at three layers:
+- Schema: `UNIQUE(x, y)` on `ships` (`ships_xy_unique`, V12) and on `celestial_bodies` (`celestial_bodies_xy_unique`, V8).
+- API: `POST /api/ships/{id}/orders` with a `MOVE` to an occupied destination returns 400. Spawn collisions on the cross-transaction race retry the spiral and translate any `ships_xy_unique` violation into a fresh search.
+- Tick: a MOVE whose next intermediate tile is occupied cancels the order with `"blocked at (X, Y) — replan"`. No pause/wait — pausing would deadlock against stationary obstacles. A* pathfinding (#45) can revisit this decision.
 
 **Name**: auto-generated as `"<username>'s ship"` for the first ship and `"<username>'s ship N"` for the Nth additional ship (N = current ship count + 1). `POST /api/ships` accepts an optional `name` in the body to override the auto-name.
 
@@ -85,7 +90,7 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 
 | Kind    | Params                                                                                                      | Behavior                                                                                                                                                                                       |
 |---------|-------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| MOVE    | `{ "x": int, "y": int }`                                                                                    | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival.                                                                                                                    |
+| MOVE    | `{ "x": int, "y": int }`                                                                                    | Each tick, advance one Chebyshev step toward `(x, y)`. Complete on arrival. Rejected at queue time (400) if the destination is occupied by a ship or a body; cancels mid-flight if the next step's tile becomes occupied. |
 | EXTRACT | `{ "resourceKind": ResourceKind, "mode": "until_cancelled" \| { "ticks": N } \| { "until_full": true } }` | Per tick, extract `min(extract_rate, reserve, cap-current)` units of the resource into `ship_cargo` from the first Chebyshev-adjacent body. Terminates per `mode`. Cancels if not `ORBITING`. |
 | SELL    | `{ "resourceKind": ResourceKind }`                                                                          | One tick. Convert all cargo of `resourceKind` to credits at the first adjacent body's buy price. Deletes the cargo row. Cancels if not `ORBITING`, the body doesn't buy this resource, or the ship has none. |
 
@@ -238,4 +243,4 @@ Originally raised in issue #2; some are now resolved by later issues.
 2. ~~Auto-landing on a planet tile, or a separate `LAND` order?~~ **Resolved in #11, superseded in #87**: the orbit-only model collapsed `LANDED`/`ORBITING`/`LAND`/`TAKE_OFF` to a single position-derived `ORBITING` (ship Chebyshev-adjacent to any body) — no order needed.
 3. ~~Number of planets and placement?~~ **Resolved in #46 + PR 1 of #80**: 40 hand-placed celestial bodies across the kind taxonomy in `V9__seed_initial_map.sql` (replaces the original V5 6-planet seed).
 4. Ship name: player-chosen or generated? Currently generated (`"<username>'s ship"`). Player-chosen deferred until there's a UI to choose.
-5. Collision: can two ships share a tile? *Rec: yes, no collision in v1.*
+5. ~~Collision: can two ships share a tile?~~ **Resolved in #88**: no. A tile holds at most one entity in v1, enforced by `UNIQUE(x, y)` on both `ships` and `celestial_bodies`, MOVE queue-time + per-tick checks, and the spawn-spiral. See the "Tile occupancy" paragraph in the Ship section.

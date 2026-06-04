@@ -142,11 +142,13 @@ class AuthControllerIT {
         var shipId = ships.getFirst().getId();
 
         // Queue an order so the cascade has something to delete in ship_orders too.
+        // (10,10) is Proxima B per the V9 seed and would 400 under the per-tile
+        // collision rule (#88); (10,11) is empty.
         mockMvc.perform(post("/api/ships/" + shipId + "/orders")
                         .session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateOrderRequest(OrderKind.MOVE, Map.of("x", 10, "y", 10)))))
+                                new CreateOrderRequest(OrderKind.MOVE, Map.of("x", 10, "y", 11)))))
                 .andExpect(status().isCreated());
         assertThat(shipOrderRepository.findAll()).hasSize(1);
 

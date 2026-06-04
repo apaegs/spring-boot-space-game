@@ -3,9 +3,11 @@ package org.example.springbootspacegame.ship;
 import lombok.RequiredArgsConstructor;
 import org.example.springbootspacegame.auth.User;
 import org.example.springbootspacegame.auth.UserRepository;
+import org.example.springbootspacegame.body.CelestialBodyRepository;
 import org.example.springbootspacegame.body.CelestialBodyService;
 import org.example.springbootspacegame.order.OrderStatus;
 import org.example.springbootspacegame.order.ShipOrderRepository;
+import org.example.springbootspacegame.world.WorldConstants;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,13 +21,26 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ShipService {
 
-    // One tile east of Earth (seeded at 50,50 in V9). Adjacent to Earth so a
-    // fresh player's mothership derives ORBITING immediately — no LAND order
-    // needed (issue #87, orbit-only model). Deterministic for tests; (51,50)
-    // is empty in the V9 seed so multiple spawns just stack there until the
-    // per-tile collision check (#88) lands.
+    // Preferred origin tile — one tile east of Earth (seeded at 50,50 in V9).
+    // Adjacent to Earth so a fresh player's mothership derives ORBITING
+    // immediately. When occupied (multi-player race, prior test ships,
+    // returning user with multiple ships) the spawn search spirals outward
+    // from here.
     static final int SPAWN_X = 51;
     static final int SPAWN_Y = 50;
+
+    // How far the spawn-spiral walks before giving up. Radius 10 = 441
+    // candidate tiles around Earth — comfortable headroom for any realistic
+    // player count, but bounded so a degenerate "everything full" state
+    // returns 503 instead of degenerating to a far-corner spawn the player
+    // wouldn't expect.
+    private static final int MAX_SPAWN_RADIUS = 10;
+
+    // Retries for the cross-transaction spawn race that the per-user lock
+    // doesn't cover (two registrations both reading "(51,50) is free" then
+    // both inserting). The UNIQUE(x,y) constraint catches the loser at
+    // insert; this many retries of the spiral handles it gracefully.
+    private static final int SPAWN_RETRY_ATTEMPTS = 3;
 
     private static final List<OrderStatus> ACTIVE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.ACTIVE);
 
@@ -33,19 +48,21 @@ public class ShipService {
     private final UserRepository userRepository;
     private final ShipOrderRepository shipOrderRepository;
     private final CelestialBodyService celestialBodyService;
+    private final CelestialBodyRepository celestialBodyRepository;
     private final ShipTypeRepository shipTypeRepository;
     private final ShipCargoRepository shipCargoRepository;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
      * {@code AuthService.register} inside the same transaction as the user
-     * insert. No concurrency concern — only the registration flow can reach
-     * this user before commit.
+     * insert. The {@code AuthService}-level user uniqueness check prevents
+     * two registrations from racing on the same user; the spawn-spiral plus
+     * {@code UNIQUE(x, y)} on {@code ships} (V12) handles the cross-user race
+     * where two new registrations both want (51, 50).
      */
     @Transactional
     public Ship createForNewUser(UUID userId, String username) {
-        Ship ship = new Ship(userId, autoName(username, 0), SPAWN_X, SPAWN_Y, ShipType.MOTHERSHIP_ID);
-        return shipRepository.save(ship);
+        return spawnShip(userId, autoName(username, 0));
     }
 
     /**
@@ -56,7 +73,8 @@ public class ShipService {
      * the same user. With the lock held, {@link ShipRepository#countByUserId}
      * is safe to base the next auto-name on. The unique constraint on
      * {@code (user_id, name)} in V6 is defence-in-depth for any case the lock
-     * misses or a player-supplied custom name collides.
+     * misses or a player-supplied custom name collides. The spawn-tile
+     * collision case is handled by the same spiral as new-user spawn.
      */
     @Transactional
     public ShipDto createShipForCurrentUser(UUID userId, CreateShipRequest request) {
@@ -68,17 +86,79 @@ public class ShipService {
                 ? desired
                 : autoName(user.getUsername(), shipRepository.countByUserId(userId));
 
-        Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y, ShipType.MOTHERSHIP_ID);
         try {
-            Ship saved = shipRepository.saveAndFlush(ship);
+            Ship saved = spawnShip(userId, name);
             return toDto(saved);
         } catch (DataIntegrityViolationException e) {
-            // Only reachable if a player-supplied custom name collides with an
-            // existing ship's name. Auto-named conflicts can't reach here
-            // because of the per-user lock above.
+            // (user_id, name) collision on a player-supplied custom name.
+            // Auto-named conflicts can't reach here because of the per-user
+            // lock above. The xy-unique race is handled inside spawnShip.
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A ship named '" + name + "' already exists", e);
         }
+    }
+
+    /**
+     * Save a new {@link Ship} at the first free tile near {@link #SPAWN_X},
+     * {@link #SPAWN_Y}, retrying the spiral on a cross-transaction race that
+     * loses to the {@code ships_xy_unique} constraint. Throws 503 if no
+     * candidate tile is free after {@link #MAX_SPAWN_RADIUS}, or if all
+     * {@link #SPAWN_RETRY_ATTEMPTS} retries lose the race.
+     */
+    private Ship spawnShip(UUID userId, String name) {
+        DataIntegrityViolationException lastRace = null;
+        for (int attempt = 0; attempt < SPAWN_RETRY_ATTEMPTS; attempt++) {
+            int[] tile = findFreeSpawnTile();
+            Ship ship = new Ship(userId, name, tile[0], tile[1], ShipType.MOTHERSHIP_ID);
+            try {
+                return shipRepository.saveAndFlush(ship);
+            } catch (DataIntegrityViolationException e) {
+                // Distinguish the xy-unique race (retryable) from the
+                // (user_id, name) collision (not retryable — rethrow so the
+                // caller can map it to a 409).
+                if (!isXyUniqueViolation(e)) {
+                    throw e;
+                }
+                lastRace = e;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Could not find a free spawn tile after " + SPAWN_RETRY_ATTEMPTS + " attempts", lastRace);
+    }
+
+    private static boolean isXyUniqueViolation(DataIntegrityViolationException e) {
+        // The constraint name is stable (set in V12). Match on it rather than
+        // the root cause class so we're robust to driver/dialect changes.
+        String message = e.getMessage();
+        return message != null && message.contains("ships_xy_unique");
+    }
+
+    /**
+     * First free tile in expanding Chebyshev rings around the preferred
+     * spawn. Rings are walked in {@code (dy, dx)} order so the per-ring
+     * walk is deterministic — tests can predict which tile the Nth contested
+     * spawn will pick. Returns {@code [x, y]}; throws 503 past
+     * {@link #MAX_SPAWN_RADIUS}.
+     */
+    private int[] findFreeSpawnTile() {
+        int size = WorldConstants.GRID_SIZE;
+        for (int r = 0; r <= MAX_SPAWN_RADIUS; r++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    // Only the ring at exactly Chebyshev distance r — skips
+                    // tiles already covered in earlier rings.
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
+                    int x = SPAWN_X + dx;
+                    int y = SPAWN_Y + dy;
+                    if (x < 0 || x >= size || y < 0 || y >= size) continue;
+                    if (isTileFree(x, y)) {
+                        return new int[]{x, y};
+                    }
+                }
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "No free spawn tile within Chebyshev radius " + MAX_SPAWN_RADIUS + " of (" + SPAWN_X + ", " + SPAWN_Y + ")");
     }
 
     @Transactional(readOnly = true)
@@ -171,6 +251,22 @@ public class ShipService {
         return celestialBodyService.findFirstAdjacent(ship.getX(), ship.getY())
                 .map(b -> ShipStatus.ORBITING)
                 .orElse(ShipStatus.IDLE);
+    }
+
+    /**
+     * Per-tile collision check (issue #88): is the tile at {@code (x, y)}
+     * free of both ships and celestial bodies? Bodies are stationary
+     * obstacles; ships are moving ones. Used by the MOVE handler at queue
+     * time and per-tick, and by the spawn-spiral.
+     *
+     * <p>Two index seeks. No special handling for out-of-bounds — callers
+     * (MOVE handler, spawn-spiral) already filter coordinates against
+     * {@link WorldConstants#GRID_SIZE}.
+     */
+    @Transactional(readOnly = true)
+    public boolean isTileFree(int x, int y) {
+        return !shipRepository.existsByXAndY(x, y)
+                && !celestialBodyRepository.existsByXAndY(x, y);
     }
 
     /**

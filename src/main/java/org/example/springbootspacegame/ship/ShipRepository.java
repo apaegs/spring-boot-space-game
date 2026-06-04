@@ -30,4 +30,11 @@ public interface ShipRepository extends JpaRepository<Ship, UUID> {
      * controller maps it to 404 so we don't leak the existence of other users' ships.
      */
     Optional<Ship> findByIdAndUserId(UUID id, UUID userId);
+
+    /**
+     * "Is there any ship on this tile?" — backs the per-tile collision rule
+     * (issue #88). Pairs with {@link org.example.springbootspacegame.body.CelestialBodyRepository#existsByXAndY}
+     * to answer "is this tile free for a ship to occupy or move onto".
+     */
+    boolean existsByXAndY(int x, int y);
 }
