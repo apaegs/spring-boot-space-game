@@ -47,17 +47,26 @@ public class CelestialBodyService {
     }
 
     /**
-     * Every celestial body Chebyshev-adjacent to {@code (x, y)}, in deterministic
-     * order. Used by status derivation and by the EXTRACT / SELL handlers. The
-     * caller is expected to be another service, hence the entity (not DTO)
-     * return type. List, not Optional, because a ship can be adjacent to more
-     * than one body — handlers pick one off the front; status derivation only
-     * needs "is the list non-empty".
+     * Every celestial body Chebyshev-adjacent to {@code (x, y)} — the 8
+     * neighbouring tiles, excluding the center — in deterministic order. Used
+     * by status derivation and by the EXTRACT / SELL handlers. The caller is
+     * expected to be another service, hence the entity (not DTO) return type.
+     * List, not Optional, because a ship can be adjacent to more than one body
+     * — handlers pick one off the front; status derivation only needs "is the
+     * list non-empty".
+     *
+     * <p>The center filter matches the {@code Math.max(|dx|, |dy|) === 1}
+     * predicate the frontend's {@code bodyAtSelectedShip} uses, so backend
+     * and UI agree on which body counts as "the body the ship is orbiting"
+     * even if a ship ever ends up on a body's tile.
      */
     @Transactional(readOnly = true)
     public List<CelestialBody> findAdjacent(int x, int y) {
-        return celestialBodyRepository.findByXBetweenAndYBetweenOrderByXAscYAscIdAsc(
-                x - 1, x + 1, y - 1, y + 1);
+        return celestialBodyRepository
+                .findByXBetweenAndYBetweenOrderByXAscYAscIdAsc(x - 1, x + 1, y - 1, y + 1)
+                .stream()
+                .filter(body -> body.getX() != x || body.getY() != y)
+                .toList();
     }
 
     /**

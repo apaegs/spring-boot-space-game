@@ -70,7 +70,7 @@ A pending or completed instruction in a ship's queue. The game loop pulls the ol
 |---------------|--------------|----------------------------------------------------------------------|
 | id            | UUID         | PK                                                                   |
 | ship_id       | UUID         | FK → ship.id, `ON DELETE CASCADE`                                    |
-| kind          | VARCHAR(32)  | `'MOVE'`, `'LAND'`, … extensible. Validated at the application layer |
+| kind          | VARCHAR(32)  | `'MOVE'`, `'EXTRACT'`, `'SELL'`, … extensible. Validated at the application layer |
 | params        | JSONB        | order-type-specific payload (e.g. `{ "x": 50, "y": 50 }` for MOVE)   |
 | status        | VARCHAR(16)  | `PENDING` → `ACTIVE` → `COMPLETED` (or `CANCELLED`)                  |
 | created_at    | TIMESTAMPTZ  | default `now()` — drives queue order                                 |
@@ -126,7 +126,7 @@ Pre-seeded point of interest on the grid — planets, asteroids, gas giants, and
 | `ASTEROID`     | Many on the map. Mixed iron/water/rare-metal trace.                    |
 | `STAR`         | Decorative + nav landmark. No extraction.                              |
 
-Seeded in `V9__seed_initial_map.sql` — ~40 bodies across the kind taxonomy. The seed replaces the original V5 6-planet seed entirely. Earth still sits at `(50, 50)` (the spawn tile) so a fresh player's mothership starts on their home body.
+Seeded in `V9__seed_initial_map.sql` — ~40 bodies across the kind taxonomy. The seed replaces the original V5 6-planet seed entirely. Earth still sits at `(50, 50)`; spawn is `(51, 50)`, one tile east, so a fresh player's mothership starts Chebyshev-adjacent to its home body and derives `ORBITING` immediately.
 
 ### BodyResource
 

@@ -4,7 +4,7 @@ This file is for two readers: **the friend being onboarded** and **Claude the ag
 
 ## What the project is
 
-A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid populated with celestial bodies (planets, asteroids, gas giants, stars). The player sets a destination, the ship moves 1 tile per tick, and on arrival at a body the player can land and interact. The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
+A 2D, tick-based space game in the browser — closest comparison is a web-based relative of Elite. Each player controls a mothership on a fixed 100×100 grid populated with celestial bodies (planets, asteroids, gas giants, stars). The player sets a destination, the ship moves 1 tile per tick, and when Chebyshev-adjacent to a body the ship is automatically `ORBITING` and can interact with it (EXTRACT / SELL). The world ticks in the background (≤ 1 min) regardless of whether anyone is logged in — it's not real-time strategy, more "log in now and then and make decisions."
 
 Detailed domain model: see [DOMAIN.md](DOMAIN.md).
 
