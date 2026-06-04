@@ -195,11 +195,18 @@ public class ExtractOrderHandler implements OrderHandler {
             Map<String, Object> map = (Map<String, Object>) m;
             if (map.containsKey("ticks")) {
                 Object t = map.get("ticks");
+                // Jackson produces Integer/Long for JSON integer literals, and
+                // Double/BigDecimal for fractional ones. Reject fractional input
+                // explicitly rather than silently truncating via Number.intValue()
+                // — `{ticks: 1.9}` would otherwise become 1.
                 int n;
-                if (t instanceof Number num) {
+                if (t instanceof Integer num) {
+                    n = num;
+                } else if (t instanceof Long num
+                        && num <= Integer.MAX_VALUE && num >= Integer.MIN_VALUE) {
                     n = num.intValue();
                 } else {
-                    throw new IllegalArgumentException("mode.ticks must be a number");
+                    throw new IllegalArgumentException("mode.ticks must be an integer");
                 }
                 if (n <= 0) {
                     throw new IllegalArgumentException("mode.ticks must be > 0, was " + n);
