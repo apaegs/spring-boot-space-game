@@ -34,6 +34,8 @@ public class ShipService {
     private final UserRepository userRepository;
     private final ShipOrderRepository shipOrderRepository;
     private final CelestialBodyService celestialBodyService;
+    private final ShipTypeRepository shipTypeRepository;
+    private final ShipCargoRepository shipCargoRepository;
 
     /**
      * Create the auto-mothership for a brand-new user. Called from
@@ -70,7 +72,7 @@ public class ShipService {
         Ship ship = new Ship(userId, name, SPAWN_X, SPAWN_Y, ShipType.MOTHERSHIP_ID);
         try {
             Ship saved = shipRepository.saveAndFlush(ship);
-            return ShipDto.from(saved, deriveStatus(saved));
+            return toDto(saved);
         } catch (DataIntegrityViolationException e) {
             // Only reachable if a player-supplied custom name collides with an
             // existing ship's name. Auto-named conflicts can't reach here
@@ -83,7 +85,7 @@ public class ShipService {
     @Transactional(readOnly = true)
     public List<ShipDto> listForUser(UUID userId) {
         return shipRepository.findByUserIdOrderByCreatedAtAsc(userId).stream()
-                .map(ship -> ShipDto.from(ship, deriveStatus(ship)))
+                .map(this::toDto)
                 .toList();
     }
 
@@ -117,11 +119,29 @@ public class ShipService {
         ship.rename(name);
         try {
             Ship saved = shipRepository.saveAndFlush(ship);
-            return ShipDto.from(saved, deriveStatus(saved));
+            return toDto(saved);
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A ship named '" + name + "' already exists", e);
         }
+    }
+
+    /**
+     * Build a {@link ShipDto} for a single ship, joining in ship type and
+     * cargo. Centralized here so every callsite gets the same shape — and
+     * adding fields to the DTO only requires updating one place.
+     *
+     * <p>One DB lookup for the ship type, one for the cargo. For multi-ship
+     * users this is N+1; v1 has 1 ship per user so the saving from batching
+     * isn't yet worth the complexity. Revisit if a future "fleet view"
+     * surfaces a real-user player with many ships.
+     */
+    private ShipDto toDto(Ship ship) {
+        ShipType type = shipTypeRepository.findById(ship.getShipTypeId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Ship " + ship.getId() + " references unknown shipTypeId " + ship.getShipTypeId()));
+        List<ShipCargo> cargo = shipCargoRepository.findByShipId(ship.getId());
+        return ShipDto.from(ship, deriveStatus(ship), type, cargo);
     }
 
     @Transactional(readOnly = true)

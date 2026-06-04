@@ -5,11 +5,18 @@ import { TickCounter } from '../TickCounter'
 import { DeleteAccountDialog } from './DeleteAccountDialog'
 
 /**
- * Persistent top bar. Player identity on the left, the world clock in the
- * middle, log-out and delete-account on the right. Stays visible regardless
- * of which ship is selected or which main view is rendered.
+ * Persistent top bar. Player identity + credits readout on the left, the
+ * world clock in the middle, log-out and delete-account on the right. Stays
+ * visible regardless of which ship is selected or which main view is rendered.
  */
-export function GameHeader({ tick }: { tick: number | undefined }) {
+export function GameHeader({
+    tick,
+    credits,
+}: {
+    tick: number | undefined
+    /** undefined while /me hasn't loaded yet; otherwise the user's current credit balance. */
+    credits: number | undefined
+}) {
     const { user, logout, deleteAccount } = useAuth()
     const navigate = useNavigate()
     const [deleteOpen, setDeleteOpen] = useState(false)
@@ -31,6 +38,9 @@ export function GameHeader({ tick }: { tick: number | undefined }) {
             <div className="game-header__left">
                 <span className="game-header__title">Space Game</span>
                 <span className="game-header__user">{user?.username}</span>
+                <span className="game-header__credits" title="Credits">
+                    {credits !== undefined ? `${credits.toLocaleString('en-US')} cr` : '—'}
+                </span>
             </div>
             <div className="game-header__tick">
                 tick <TickCounter tick={tick} />

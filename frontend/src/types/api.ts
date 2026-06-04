@@ -17,9 +17,9 @@
  *   LoginRequest         → auth/LoginRequest.java
  *   ShipStatus           → ship/ShipStatus.java
  *   ShipDto              → ship/ShipDto.java
+ *   ShipCargoEntry       → ship/ShipDto.java (nested CargoEntry record)
  *   CreateShipRequest    → ship/CreateShipRequest.java
  *   PublicShipDto        → ship/PublicShipDto.java
- *   ShipType / ShipCargo → ship/ShipType.java, ship/ShipCargo.java
  *   WorldDto             → world/WorldDto.java
  *   CelestialBodyDto     → body/CelestialBodyDto.java
  *   CelestialBodyKind    → body/CelestialBodyKind.java
@@ -72,10 +72,24 @@ export type ShipDto = {
     name: string
     x: number
     y: number
-    /** FK into the ship types catalog. Stats (cargo cap, extract rate) live on the type, not the ship. */
+    /** FK into the ship types catalog. */
     shipTypeId: string
+    /** Display name of the ship type (e.g. "Mothership"). Joined in server-side. */
+    shipTypeName: string
+    /** Total cargo cap across all resources combined. */
+    cargoCapacity: number
+    /** Units the EXTRACT handler pulls per tick. UI uses it for ETA estimates. */
+    extractRate: number
+    /** Per-resource cargo rows. Sum of {@code qty} is enforced against {@code cargoCapacity}. */
+    cargo: ShipCargoEntry[]
     createdAt: string
     status: ShipStatus
+}
+
+/** One row of a ship's cargo hold. Embedded in {@link ShipDto}. */
+export type ShipCargoEntry = {
+    resourceKind: ResourceKind
+    qty: number
 }
 
 /**
@@ -97,24 +111,6 @@ export type PublicShipDto = {
     name: string
     x: number
     y: number
-}
-
-/**
- * Catalog entry for a ship type — cargo capacity, extraction rate, etc. v1 has
- * exactly one row ({@code MOTHERSHIP}); future types are new rows.
- */
-export type ShipTypeDto = {
-    id: string
-    code: string
-    name: string
-    cargoCapacity: number
-    extractRate: number
-}
-
-/** One row of a ship's cargo hold ({@code (shipId, resourceKind, qty)} composite key). */
-export type ShipCargoDto = {
-    resourceKind: ResourceKind
-    qty: number
 }
 
 // --- world ---
@@ -164,8 +160,27 @@ export type CelestialBodyDto = {
 
 // --- orders ---
 
-export type OrderKind = 'MOVE' | 'LAND'
+export type OrderKind = 'MOVE' | 'LAND' | 'TAKE_OFF' | 'EXTRACT' | 'SELL'
 export type OrderStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+
+/**
+ * Mode shape for `EXTRACT` orders. Three duration kinds:
+ * - `"until_cancelled"` — runs until the player cancels.
+ * - `{ ticks: N }` — runs for N ticks (counter on the order is incremented per tick).
+ * - `{ until_full: true }` — runs until the ship's cargo cap is reached.
+ */
+export type ExtractMode = 'until_cancelled' | { ticks: number } | { until_full: true }
+
+/** Params payload for the EXTRACT order kind. */
+export type ExtractParams = {
+    resourceKind: ResourceKind
+    mode: ExtractMode
+}
+
+/** Params payload for the SELL order kind. */
+export type SellParams = {
+    resourceKind: ResourceKind
+}
 
 export type ShipOrderDto = {
     id: string
@@ -173,6 +188,10 @@ export type ShipOrderDto = {
     kind: OrderKind
     params: Record<string, unknown>
     status: OrderStatus
+    /** True iff the auto-prerequisite middleware inserted this order. UI renders an "↩ auto" badge. */
+    autoInserted: boolean
+    /** Counter incremented by multi-tick handlers (currently only EXTRACT in `mode={ticks: N}`). */
+    progressTicks: number
     createdAt: string
     startedAt: string | null
     completedAt: string | null

@@ -105,8 +105,16 @@ export class WorldMap {
     private static readonly COLORS = {
         background: 0x0a0a1a,
         gridLine: 0x2a2a4a,
-        body: 0xffaa00,
         bodyLabel: 0xffffff,
+        // Per-kind body colors. The fallback (`body`) is also the legacy color
+        // used before PR 3 broke kinds apart.
+        body: 0xffaa00,
+        bodyRocky: 0xb07050,    // brown
+        bodyLava: 0xff5533,     // bright red-orange
+        bodyIce: 0x99ccee,      // pale blue
+        bodyGasGiant: 0xddaa66, // banded ochre
+        bodyAsteroid: 0x888888, // muted grey
+        bodyStar: 0xfff066,     // bright yellow (matches selected-ship for visual weight)
         shipOwn: 0x66ddff,
         shipForeign: 0xc266aa,
         shipSelected: 0xfff066,
@@ -114,6 +122,26 @@ export class WorldMap {
         hover: 0x66ddff,
         selectionRingShip: 0x66ddff,
         selectionRingBody: 0xffdd88,
+    }
+
+    /** Color picker keyed on the body's kind. Used by {@link renderBodies}. */
+    private static colorForKind(kind: CelestialBodyDto['kind']): number {
+        switch (kind) {
+            case 'ROCKY_PLANET':
+                return WorldMap.COLORS.bodyRocky
+            case 'LAVA_PLANET':
+                return WorldMap.COLORS.bodyLava
+            case 'ICE_PLANET':
+                return WorldMap.COLORS.bodyIce
+            case 'GAS_GIANT':
+                return WorldMap.COLORS.bodyGasGiant
+            case 'ASTEROID':
+                return WorldMap.COLORS.bodyAsteroid
+            case 'STAR':
+                return WorldMap.COLORS.bodyStar
+            default:
+                return WorldMap.COLORS.body
+        }
     }
 
     private app: Application | null = null
@@ -405,15 +433,23 @@ export class WorldMap {
 
         for (const body of this.bodies) {
             const { px, py } = WorldMap.tileToPx(body.x, body.y)
+            const color = WorldMap.colorForKind(body.kind)
+            // Asteroids render smaller than full bodies — they're physically
+            // smaller and the visual cue helps the player tell what they're
+            // looking at at world zoom. Everything else uses the full marker.
+            const visibleHalf =
+                body.kind === 'ASTEROID'
+                    ? WorldMap.MARKER_MAX_HALF * 0.55
+                    : WorldMap.MARKER_MAX_HALF
 
             const dot = new Graphics()
             // Visible disc capped at {@link MARKER_MAX_HALF} so it can't draw
             // past its tile. The transparent hit area stays large for click
             // accessibility at world zoom — only the visible bound is capped.
             dot.circle(px, py, 10)
-            dot.fill({ color: WorldMap.COLORS.body, alpha: 0 })
-            dot.circle(px, py, WorldMap.MARKER_MAX_HALF)
-            dot.fill(WorldMap.COLORS.body)
+            dot.fill({ color, alpha: 0 })
+            dot.circle(px, py, visibleHalf)
+            dot.fill(color)
             if (this.targeting) {
                 // In targeting mode the body must NOT swallow the click —
                 // a MOVE-targeting click on a body's tile is queued like any
