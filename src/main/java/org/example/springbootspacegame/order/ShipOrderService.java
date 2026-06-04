@@ -42,7 +42,9 @@ public class ShipOrderService {
     @Transactional
     public ShipOrderDto appendOrder(UUID userId, UUID shipId, CreateOrderRequest request) {
         Ship ship = shipService.requireOwnedShip(userId, shipId);
-        handlerRegistry.forKind(request.kind()).validateParams(request.paramsOrEmpty());
+        var handler = handlerRegistry.forKind(request.kind());
+        handler.validateParams(request.paramsOrEmpty());
+        handler.validateForShip(ship, request.paramsOrEmpty());
 
         ShipOrder order = new ShipOrder(
                 ship.getId(),

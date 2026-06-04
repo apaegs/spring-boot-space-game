@@ -17,10 +17,24 @@ public interface OrderHandler {
     /**
      * Validate the params payload at append-time so bad orders 400 immediately
      * instead of failing at tick time. Default no-op for handlers that take no
-     * params (e.g. LAND). Override and throw {@code ResponseStatusException}
+     * params. Override and throw {@code ResponseStatusException}
      * with BAD_REQUEST if the params are malformed.
      */
     default void validateParams(java.util.Map<String, Object> params) {
+        // no-op
+    }
+
+    /**
+     * Append-time validation that needs context beyond the params themselves —
+     * the ship, the world state, other ships. Runs after {@link #validateParams}
+     * inside the {@code appendOrder} transaction. Default no-op. Override and
+     * throw {@code ResponseStatusException} with BAD_REQUEST when the order
+     * can't be accepted given the current state.
+     *
+     * <p>Distinct from {@link #validateParams} so that pure shape-validation
+     * stays DB-free and easy to unit-test.
+     */
+    default void validateForShip(Ship ship, java.util.Map<String, Object> params) {
         // no-op
     }
 

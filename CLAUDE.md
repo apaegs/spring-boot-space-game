@@ -152,7 +152,7 @@ Use these terms consistently in code, commits, issues and discussion. Detailed m
 - **BodyResource** — Per-(body, resource) reserve. The EXTRACT handler decrements it.
 - **BodyBuyPrice** — Per-(body, resource) buy price. The SELL handler reads it.
 - **ResourceKind** — The catalogue of resources (`IRON`, `WATER`, `HYDROGEN`, `HELIUM`, `RARE_METAL`). All resources extract from `ORBITING`; which body yields which is governed by the seeded matrix.
-- **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, CelestialBody) have coordinates.
+- **Tile** — A square on the 100×100 grid, identified by `(x, y)`. Not stored as a table — only interesting things (Ship, CelestialBody) have coordinates. At most one entity per tile in v1 (per-tile collision, issue #88) — enforced by `UNIQUE(x, y)` on both `ships` and `celestial_bodies` plus application-level MOVE / spawn checks.
 - **Tick** — A recurring time interval (≤ 1 min) when the world is processed: ships in motion are advanced, future feature effects are triggered. Scheduled centrally.
 - **World** — The global state all players share (grid size, current tick). A single `WorldState` singleton row.
 
