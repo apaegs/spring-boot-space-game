@@ -245,8 +245,8 @@ export class WorldMap {
     private rmbDrag: {
         startClientX: number
         startClientY: number
-        startCameraX: number
-        startCameraY: number
+        lastClientX: number
+        lastClientY: number
         moved: boolean
         pointerId: number
     } | null = null
@@ -732,8 +732,8 @@ export class WorldMap {
         this.rmbDrag = {
             startClientX: event.clientX,
             startClientY: event.clientY,
-            startCameraX: this.camera.x,
-            startCameraY: this.camera.y,
+            lastClientX: event.clientX,
+            lastClientY: event.clientY,
             moved: false,
             pointerId: event.pointerId,
         }
@@ -748,19 +748,27 @@ export class WorldMap {
      */
     private handlePointerMove(event: PointerEvent): void {
         if (!this.rmbDrag) return
-        const dx = event.clientX - this.rmbDrag.startClientX
-        const dy = event.clientY - this.rmbDrag.startClientY
+        const dxFromStart = event.clientX - this.rmbDrag.startClientX
+        const dyFromStart = event.clientY - this.rmbDrag.startClientY
         if (!this.rmbDrag.moved) {
-            if (Math.max(Math.abs(dx), Math.abs(dy)) < WorldMap.DRAG_THRESHOLD_PX) {
+            if (Math.max(Math.abs(dxFromStart), Math.abs(dyFromStart)) < WorldMap.DRAG_THRESHOLD_PX) {
                 return
             }
             this.rmbDrag.moved = true
             this.setPanCursor(true)
         }
-        const delta = pixelsToCameraDelta(dx, dy, this.camera.zoom, WorldMap.TILE_PX)
+        // Per-step delta (not "from drag start") so the RMB pan composes with
+        // concurrent keyboard pan — both contributions land on the current
+        // camera state instead of the RMB handler clobbering keyboard pan on
+        // every pointermove.
+        const stepDx = event.clientX - this.rmbDrag.lastClientX
+        const stepDy = event.clientY - this.rmbDrag.lastClientY
+        this.rmbDrag.lastClientX = event.clientX
+        this.rmbDrag.lastClientY = event.clientY
+        const delta = pixelsToCameraDelta(stepDx, stepDy, this.camera.zoom, WorldMap.TILE_PX)
         this.camera = {
-            x: clamp(this.rmbDrag.startCameraX + delta.dx, 0, WorldMap.GRID_CELLS),
-            y: clamp(this.rmbDrag.startCameraY + delta.dy, 0, WorldMap.GRID_CELLS),
+            x: clamp(this.camera.x + delta.dx, 0, WorldMap.GRID_CELLS),
+            y: clamp(this.camera.y + delta.dy, 0, WorldMap.GRID_CELLS),
             zoom: this.camera.zoom,
         }
         // Mark as manually panned so the next setShips/setBodies tick
@@ -822,8 +830,14 @@ export class WorldMap {
      */
     private handleKeyDown(event: KeyboardEvent): void {
         if (!(event.code in PAN_KEYS)) return
+        // Skip modifier chords (Ctrl+D bookmark, Alt+Tab, etc.) so we don't
+        // hijack browser/app shortcuts.
+        if (event.ctrlKey || event.metaKey || event.altKey) return
         if (isEditableTarget(document.activeElement)) return
-        event.preventDefault()
+        // Only suppress the default for arrow keys — those scroll the page.
+        // WASD already produces no default behaviour on the canvas, so leaving
+        // it alone keeps text selection / browser shortcuts unaffected.
+        if (event.code.startsWith('Arrow')) event.preventDefault()
         this.heldPanKeys.add(event.code)
     }
 
@@ -843,6 +857,11 @@ export class WorldMap {
      */
     private applyKeyboardPan(): void {
         if (this.heldPanKeys.size === 0 || !this.app) return
+        // Per-tick focus guard: if the player held an arrow on the canvas and
+        // then tabbed / clicked into an input mid-pan, keyup hasn't fired yet
+        // so the key is still in the held set. Bail until focus leaves the
+        // editable surface again.
+        if (isEditableTarget(document.activeElement)) return
         let dxSum = 0
         let dySum = 0
         for (const code of this.heldPanKeys) {
