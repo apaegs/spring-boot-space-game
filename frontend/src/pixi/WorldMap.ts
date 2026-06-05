@@ -72,6 +72,34 @@ export type HoverInfo =
  *       MOVE-target a body's tile without the body "swallowing" the click.</li>
  * </ul>
  */
+/**
+ * Pan-key bindings for the keyboard navigation in {@link WorldMap}. Keyed by
+ * {@code KeyboardEvent.code} so the bindings stay layout-independent — WASD
+ * means the W/A/S/D positions on a QWERTY keyboard, the same physical keys
+ * a Dvorak or Colemak user expects. Arrows are physical too, just by coincidence.
+ */
+const PAN_KEYS: Record<string, { dx: number; dy: number }> = {
+    ArrowLeft:  { dx: -1, dy:  0 },
+    ArrowRight: { dx:  1, dy:  0 },
+    ArrowUp:    { dx:  0, dy: -1 },
+    ArrowDown:  { dx:  0, dy:  1 },
+    KeyA:       { dx: -1, dy:  0 },
+    KeyD:       { dx:  1, dy:  0 },
+    KeyW:       { dx:  0, dy: -1 },
+    KeyS:       { dx:  0, dy:  1 },
+}
+
+/**
+ * Skip the pan when the player is typing — pressing 'd' in the ship-name
+ * editor shouldn't send the camera east. Covers native form inputs and any
+ * contenteditable surface (none in v1 but future dialogs / chat would be).
+ */
+function isEditableTarget(el: Element | null): boolean {
+    if (!el) return false
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true
+    return (el as HTMLElement).isContentEditable === true
+}
+
 export class WorldMap {
     // Sourced from WorldMap.helpers so the `CANVAS_PX === GRID_CELLS * TILE_PX`
     // invariant test in WorldMap.helpers.test.ts actually protects this class's
@@ -109,6 +137,13 @@ export class WorldMap {
      * {@code onRightClick} deselect; above it, the camera starts panning.
      */
     private static readonly DRAG_THRESHOLD_PX = 5
+
+    /**
+     * Camera-pan rate (in world tiles per second) while an arrow / WASD key
+     * is held. Constant in world coordinates — visually slower at high zoom,
+     * which matches the "more precision when inzoomed" intuition.
+     */
+    private static readonly KEYBOARD_PAN_TILES_PER_SECOND = 12
 
     private static readonly COLORS = {
         background: 0x0a0a1a,
@@ -168,6 +203,15 @@ export class WorldMap {
     private userHasZoomed = false
 
     /**
+     * Has the player panned the camera since the last explicit selection
+     * change? Set by RMB drag and keyboard pan; cleared when {@link setSelection}
+     * receives a new entity. While true, {@link setShips} / {@link setBodies}
+     * skip the per-tick "snap camera back to the selected entity" so a
+     * deliberately-panned view doesn't jerk back every poll.
+     */
+    private userHasPanned = false
+
+    /**
      * The Pixi-mounted canvas. Held separately so listeners attached directly
      * to the DOM (wheel, contextmenu, pointer*) can be cleaned up on
      * {@link destroy}.
@@ -178,6 +222,17 @@ export class WorldMap {
     private pointerDownHandler: ((e: PointerEvent) => void) | null = null
     private pointerMoveHandler: ((e: PointerEvent) => void) | null = null
     private pointerUpHandler: ((e: PointerEvent) => void) | null = null
+    private keyDownHandler: ((e: KeyboardEvent) => void) | null = null
+    private keyUpHandler: ((e: KeyboardEvent) => void) | null = null
+    private blurHandler: (() => void) | null = null
+    private tickerCallback: (() => void) | null = null
+
+    /**
+     * Pan keys currently held. Drives the camera-pan tick callback. Cleared
+     * on window blur so alt-tabbing mid-press doesn't leave the camera
+     * panning forever.
+     */
+    private heldPanKeys = new Set<string>()
 
     /**
      * Active RMB drag state. Non-null between a right-button {@code pointerdown}
@@ -190,8 +245,8 @@ export class WorldMap {
     private rmbDrag: {
         startClientX: number
         startClientY: number
-        startCameraX: number
-        startCameraY: number
+        lastClientX: number
+        lastClientY: number
         moved: boolean
         pointerId: number
     } | null = null
@@ -260,6 +315,20 @@ export class WorldMap {
         this.canvas.addEventListener('pointerup', this.pointerUpHandler)
         this.canvas.addEventListener('pointercancel', this.pointerUpHandler)
 
+        // Keyboard pan (#93). Listeners go on window so the canvas doesn't
+        // need keyboard focus to receive them — the game grid is always the
+        // primary input surface on this page. The Pixi ticker (already
+        // running at rAF cadence) drives the per-frame camera translation
+        // so we don't fight Pixi's animation loop with a parallel rAF.
+        this.keyDownHandler = (e: KeyboardEvent) => this.handleKeyDown(e)
+        this.keyUpHandler = (e: KeyboardEvent) => this.handleKeyUp(e)
+        this.blurHandler = () => this.heldPanKeys.clear()
+        this.tickerCallback = () => this.applyKeyboardPan()
+        window.addEventListener('keydown', this.keyDownHandler)
+        window.addEventListener('keyup', this.keyUpHandler)
+        window.addEventListener('blur', this.blurHandler)
+        app.ticker.add(this.tickerCallback)
+
         // World layer holds everything that moves/zooms with the camera.
         this.worldLayer = new Container()
         app.stage.addChild(this.worldLayer)
@@ -303,12 +372,24 @@ export class WorldMap {
                 this.canvas.removeEventListener('pointercancel', this.pointerUpHandler)
             }
         }
+        if (this.keyDownHandler) window.removeEventListener('keydown', this.keyDownHandler)
+        if (this.keyUpHandler) window.removeEventListener('keyup', this.keyUpHandler)
+        if (this.blurHandler) window.removeEventListener('blur', this.blurHandler)
+        // Detach the ticker callback *before* app.destroy() below tears the
+        // ticker down — otherwise we'd try to remove a listener from a
+        // disposed ticker, no-op but noisy.
+        if (this.app && this.tickerCallback) this.app.ticker.remove(this.tickerCallback)
         this.canvas = null
         this.wheelHandler = null
         this.contextMenuHandler = null
         this.pointerDownHandler = null
         this.pointerMoveHandler = null
         this.pointerUpHandler = null
+        this.keyDownHandler = null
+        this.keyUpHandler = null
+        this.blurHandler = null
+        this.tickerCallback = null
+        this.heldPanKeys.clear()
         this.rmbDrag = null
         if (this.app) {
             this.app.destroy(true, { children: true, texture: true })
@@ -327,7 +408,9 @@ export class WorldMap {
         this.renderBodies()
         // A body's position may be what the camera is locked to — recompute
         // in case the body entries arrived after the selection was set.
-        if (this.selection?.kind === 'body') {
+        // Skip if the player has panned manually since the last selection:
+        // they're navigating away from the followed entity on purpose.
+        if (this.selection?.kind === 'body' && !this.userHasPanned) {
             this.updateCameraForSelection()
             this.renderSelectionRing()
         }
@@ -336,8 +419,9 @@ export class WorldMap {
     setShips(ships: ShipOnMap[]): void {
         this.ships = ships
         // Ship coordinates change each tick; if the camera follows a ship, it
-        // needs to track the latest position.
-        if (this.selection?.kind === 'ship') {
+        // needs to track the latest position. Skip if the player has panned
+        // manually since the last selection — see setBodies for the rationale.
+        if (this.selection?.kind === 'ship' && !this.userHasPanned) {
             this.updateCameraForSelection()
             this.renderSelectionRing()
         }
@@ -345,6 +429,10 @@ export class WorldMap {
     }
 
     setSelection(selection: MapSelection): void {
+        // A new explicit selection re-arms the camera-follow behaviour — the
+        // player clicked a thing, so jump to it even if they were panning
+        // around manually a moment ago.
+        this.userHasPanned = false
         this.selection = selection
         this.updateCameraForSelection()
         this.renderShips()
@@ -644,8 +732,8 @@ export class WorldMap {
         this.rmbDrag = {
             startClientX: event.clientX,
             startClientY: event.clientY,
-            startCameraX: this.camera.x,
-            startCameraY: this.camera.y,
+            lastClientX: event.clientX,
+            lastClientY: event.clientY,
             moved: false,
             pointerId: event.pointerId,
         }
@@ -660,21 +748,32 @@ export class WorldMap {
      */
     private handlePointerMove(event: PointerEvent): void {
         if (!this.rmbDrag) return
-        const dx = event.clientX - this.rmbDrag.startClientX
-        const dy = event.clientY - this.rmbDrag.startClientY
+        const dxFromStart = event.clientX - this.rmbDrag.startClientX
+        const dyFromStart = event.clientY - this.rmbDrag.startClientY
         if (!this.rmbDrag.moved) {
-            if (Math.max(Math.abs(dx), Math.abs(dy)) < WorldMap.DRAG_THRESHOLD_PX) {
+            if (Math.max(Math.abs(dxFromStart), Math.abs(dyFromStart)) < WorldMap.DRAG_THRESHOLD_PX) {
                 return
             }
             this.rmbDrag.moved = true
             this.setPanCursor(true)
         }
-        const delta = pixelsToCameraDelta(dx, dy, this.camera.zoom, WorldMap.TILE_PX)
+        // Per-step delta (not "from drag start") so the RMB pan composes with
+        // concurrent keyboard pan — both contributions land on the current
+        // camera state instead of the RMB handler clobbering keyboard pan on
+        // every pointermove.
+        const stepDx = event.clientX - this.rmbDrag.lastClientX
+        const stepDy = event.clientY - this.rmbDrag.lastClientY
+        this.rmbDrag.lastClientX = event.clientX
+        this.rmbDrag.lastClientY = event.clientY
+        const delta = pixelsToCameraDelta(stepDx, stepDy, this.camera.zoom, WorldMap.TILE_PX)
         this.camera = {
-            x: clamp(this.rmbDrag.startCameraX + delta.dx, 0, WorldMap.GRID_CELLS),
-            y: clamp(this.rmbDrag.startCameraY + delta.dy, 0, WorldMap.GRID_CELLS),
+            x: clamp(this.camera.x + delta.dx, 0, WorldMap.GRID_CELLS),
+            y: clamp(this.camera.y + delta.dy, 0, WorldMap.GRID_CELLS),
             zoom: this.camera.zoom,
         }
+        // Mark as manually panned so the next setShips/setBodies tick
+        // doesn't snap the camera back to a selected entity.
+        this.userHasPanned = true
         this.applyCamera()
         this.drawGrid()
         this.renderSelectionRing()
@@ -717,6 +816,78 @@ export class WorldMap {
             // (crosshair in targeting mode, default otherwise).
             this.canvas.style.cursor = ''
         }
+    }
+
+    // ---------- keyboard pan (#93) ----------
+
+    /**
+     * Track the held pan key and {@code preventDefault} so arrow keys don't
+     * scroll the page. No-op when the user is typing in a form input —
+     * pressing 'd' in the ship-name editor should produce a 'd', not pan
+     * the camera east.
+     *
+     * <p>Key repeat is harmless: {@code Set.add} is idempotent.
+     */
+    private handleKeyDown(event: KeyboardEvent): void {
+        if (!(event.code in PAN_KEYS)) return
+        // Skip modifier chords (Ctrl+D bookmark, Alt+Tab, etc.) so we don't
+        // hijack browser/app shortcuts.
+        if (event.ctrlKey || event.metaKey || event.altKey) return
+        if (isEditableTarget(document.activeElement)) return
+        // Only suppress the default for arrow keys — those scroll the page.
+        // WASD already produces no default behaviour on the canvas, so leaving
+        // it alone keeps text selection / browser shortcuts unaffected.
+        if (event.code.startsWith('Arrow')) event.preventDefault()
+        this.heldPanKeys.add(event.code)
+    }
+
+    private handleKeyUp(event: KeyboardEvent): void {
+        if (!(event.code in PAN_KEYS)) return
+        this.heldPanKeys.delete(event.code)
+    }
+
+    /**
+     * Per-frame Pixi-ticker callback. Sums the direction vectors of all held
+     * pan keys, normalises so diagonals don't move faster than axis-aligned
+     * pans, scales by the frame delta and {@link KEYBOARD_PAN_TILES_PER_SECOND},
+     * applies, clamps, redraws.
+     *
+     * <p>Bails fast in the common no-keys-held case so the ticker tax is
+     * one map lookup + a size check.
+     */
+    private applyKeyboardPan(): void {
+        if (this.heldPanKeys.size === 0 || !this.app) return
+        // Per-tick focus guard: if the player held an arrow on the canvas and
+        // then tabbed / clicked into an input mid-pan, keyup hasn't fired yet
+        // so the key is still in the held set. Bail until focus leaves the
+        // editable surface again.
+        if (isEditableTarget(document.activeElement)) return
+        let dxSum = 0
+        let dySum = 0
+        for (const code of this.heldPanKeys) {
+            const v = PAN_KEYS[code]
+            dxSum += v.dx
+            dySum += v.dy
+        }
+        // Opposing keys (left + right, or W + S) cancel — no motion, but
+        // also no userHasPanned latch. Treat this turn as "nothing happened".
+        if (dxSum === 0 && dySum === 0) return
+        const deltaSec = this.app.ticker.deltaMS / 1000
+        const distance = WorldMap.KEYBOARD_PAN_TILES_PER_SECOND * deltaSec
+        // Normalise so diagonal speed matches axis-aligned speed end-to-end,
+        // not per-axis. Without this, "up + right" panned ~1.41× as fast.
+        const norm = Math.hypot(dxSum, dySum)
+        this.camera = {
+            x: clamp(this.camera.x + (dxSum / norm) * distance, 0, WorldMap.GRID_CELLS),
+            y: clamp(this.camera.y + (dySum / norm) * distance, 0, WorldMap.GRID_CELLS),
+            zoom: this.camera.zoom,
+        }
+        // Mark manual pan so setShips/setBodies stop snapping the camera
+        // back to a selected entity. Cleared on the next explicit setSelection.
+        this.userHasPanned = true
+        this.applyCamera()
+        this.drawGrid()
+        this.renderSelectionRing()
     }
 
     /**
