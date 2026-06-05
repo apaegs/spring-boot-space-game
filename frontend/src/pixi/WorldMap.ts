@@ -519,12 +519,13 @@ export class WorldMap {
                 dot.eventMode = 'static'
                 dot.cursor = 'pointer'
                 dot.on('pointerdown', (e: FederatedPointerEvent) => {
-                    e.stopPropagation() // don't fall through to the tile click
-                    if (e.button === 2) {
-                        this.onRightClick?.()
-                        return
-                    }
+                    // LMB only — RMB is owned by the DOM-level pointer
+                    // handlers so the 5 px tap-vs-drag rule (#84) applies
+                    // uniformly whether the press started on a marker or
+                    // on empty grid. Stop propagation so an LMB hit on a
+                    // body doesn't also fire a tile-click underneath.
                     if (e.button !== 0) return
+                    e.stopPropagation()
                     this.onBodyClick?.(body)
                 })
                 dot.on('pointerover', (e: FederatedPointerEvent) =>
@@ -590,12 +591,10 @@ export class WorldMap {
                 marker.eventMode = 'static'
                 marker.cursor = 'pointer'
                 marker.on('pointerdown', (e: FederatedPointerEvent) => {
-                    e.stopPropagation()
-                    if (e.button === 2) {
-                        this.onRightClick?.()
-                        return
-                    }
+                    // LMB only — see the matching comment on the body
+                    // marker above. DOM-level pointer handlers own RMB.
                     if (e.button !== 0) return
+                    e.stopPropagation()
                     this.onShipClick?.(ship)
                 })
                 marker.on('pointerover', (e: FederatedPointerEvent) =>
@@ -685,6 +684,11 @@ export class WorldMap {
      * Release ends the RMB gesture. A tap (no movement past the threshold)
      * fires the existing {@code onRightClick} deselect — preserves the
      * historical RMB affordance. A drag just cleans up.
+     *
+     * <p>A {@code pointercancel} (e.g. OS focus-steal, browser-level abort)
+     * resolves the same way as a drag: clean up state but <i>don't</i>
+     * fire {@code onRightClick}. An aborted gesture isn't a user-intended
+     * tap — silently deselecting on focus-steal would be confusing.
      */
     private handlePointerUp(event: PointerEvent): void {
         if (!this.rmbDrag || event.pointerId !== this.rmbDrag.pointerId) return
@@ -694,7 +698,7 @@ export class WorldMap {
         }
         this.rmbDrag = null
         this.setPanCursor(false)
-        if (!wasDrag) {
+        if (!wasDrag && event.type === 'pointerup') {
             this.onRightClick?.()
         }
     }

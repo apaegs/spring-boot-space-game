@@ -746,6 +746,10 @@
     outline: none;
 }
 
+.add-order__btn:focus-visible {
+    box-shadow: 0 0 0 2px #66ddff;
+}
+
 .add-order__menu {
     display: flex;
     flex-direction: column;
@@ -772,6 +776,10 @@
     border-color: #66ddff;
     color: #66ddff;
     outline: none;
+}
+
+.add-order__menu button:focus-visible:not(:disabled) {
+    box-shadow: 0 0 0 2px #66ddff;
 }
 
 .add-order__menu button:disabled {
