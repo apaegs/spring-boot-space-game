@@ -37,6 +37,7 @@ App on http://localhost:8080.
 - **TS API types mirror the backend records.** `frontend/src/types/api.ts` is hand-written, not generated. The file's top comment lists every type's backing Java source-of-truth — update both sides in the same PR when a DTO changes.
 - **"Bodies" not "planets".** The map renders `CelestialBody` (planets, asteroids, gas giants, stars). TS types, selection discriminator (`{ kind: 'body' }`), API path (`/api/bodies`), and Pixi layer names all use "body" / "bodies". User-facing labels can still say "planet" where it's accurate (e.g. for `ROCKY_PLANET` kind in the panel).
 - **PixiJS** for the 2D map — a `<canvas>` mounted in a React component. Pixi code lives isolated from the React tree (Pixi owns its own render loop); React only syncs state in via props/refs and reads events back via callbacks.
+- **Map controls**: LMB = select / target. RMB-tap = deselect / cancel-targeting. RMB-drag (past ~5 px) = pan camera (cursor flips to `grabbing`). Wheel = zoom (cursor-centred when nothing's selected). Targeting cursor (crosshair) wins over the pan cursor.
 - **Not** Phaser — overkill for tick-based.
 - Animated numbers via a lightweight lib (e.g. `framer-motion` or `react-spring`); no reason to write your own easing functions.
 - State: start with React state + `@tanstack/react-query` for server state. Don't reach for Redux/Zustand before it's actually needed.

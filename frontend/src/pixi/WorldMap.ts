@@ -5,6 +5,7 @@ import {
     GRID_CELLS as HELPER_GRID_CELLS,
     TILE_PX as HELPER_TILE_PX,
     clamp,
+    pixelsToCameraDelta,
     tileToPx as pureTileToPx,
 } from './WorldMap.helpers'
 
@@ -102,6 +103,13 @@ export class WorldMap {
      */
     private static readonly ZOOM_WHEEL_STEP = 1.25
 
+    /**
+     * Movement (in CSS pixels) past which an RMB press is treated as a drag
+     * rather than a tap. Below the threshold the press fires the existing
+     * {@code onRightClick} deselect; above it, the camera starts panning.
+     */
+    private static readonly DRAG_THRESHOLD_PX = 5
+
     private static readonly COLORS = {
         background: 0x0a0a1a,
         gridLine: 0x2a2a4a,
@@ -161,11 +169,32 @@ export class WorldMap {
 
     /**
      * The Pixi-mounted canvas. Held separately so listeners attached directly
-     * to the DOM (wheel, contextmenu) can be cleaned up on {@link destroy}.
+     * to the DOM (wheel, contextmenu, pointer*) can be cleaned up on
+     * {@link destroy}.
      */
     private canvas: HTMLCanvasElement | null = null
     private wheelHandler: ((e: WheelEvent) => void) | null = null
     private contextMenuHandler: ((e: Event) => void) | null = null
+    private pointerDownHandler: ((e: PointerEvent) => void) | null = null
+    private pointerMoveHandler: ((e: PointerEvent) => void) | null = null
+    private pointerUpHandler: ((e: PointerEvent) => void) | null = null
+
+    /**
+     * Active RMB drag state. Non-null between a right-button {@code pointerdown}
+     * and the matching {@code pointerup}. The {@code moved} flag flips true
+     * once the cursor has traveled past {@link DRAG_THRESHOLD_PX} — that
+     * irreversibly converts the gesture from a tap (which would deselect on
+     * release) into a drag (which translates the camera and consumes the
+     * release without firing {@code onRightClick}).
+     */
+    private rmbDrag: {
+        startClientX: number
+        startClientY: number
+        startCameraX: number
+        startCameraY: number
+        moved: boolean
+        pointerId: number
+    } | null = null
 
     // Layers, all parented to worldLayer which carries the camera transform.
     private worldLayer: Container | null = null
@@ -216,11 +245,20 @@ export class WorldMap {
         // DOM-level listeners. Wheel and contextmenu don't surface through
         // Pixi's federated event system in a way we can use here — wheel
         // needs preventDefault to stop page scroll, and contextmenu only
-        // exists on the DOM. Both are cleaned up in {@link destroy}.
+        // exists on the DOM. RMB drag-pan also lives here so we can keep
+        // receiving pointermove events when the cursor leaves the canvas
+        // mid-drag (via setPointerCapture). All cleaned up in {@link destroy}.
         this.wheelHandler = (e: WheelEvent) => this.handleWheel(e)
         this.contextMenuHandler = (e: Event) => e.preventDefault()
+        this.pointerDownHandler = (e: PointerEvent) => this.handlePointerDown(e)
+        this.pointerMoveHandler = (e: PointerEvent) => this.handlePointerMove(e)
+        this.pointerUpHandler = (e: PointerEvent) => this.handlePointerUp(e)
         this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false })
         this.canvas.addEventListener('contextmenu', this.contextMenuHandler)
+        this.canvas.addEventListener('pointerdown', this.pointerDownHandler)
+        this.canvas.addEventListener('pointermove', this.pointerMoveHandler)
+        this.canvas.addEventListener('pointerup', this.pointerUpHandler)
+        this.canvas.addEventListener('pointercancel', this.pointerUpHandler)
 
         // World layer holds everything that moves/zooms with the camera.
         this.worldLayer = new Container()
@@ -247,15 +285,31 @@ export class WorldMap {
     }
 
     destroy(): void {
-        if (this.canvas && this.wheelHandler) {
-            this.canvas.removeEventListener('wheel', this.wheelHandler)
-        }
-        if (this.canvas && this.contextMenuHandler) {
-            this.canvas.removeEventListener('contextmenu', this.contextMenuHandler)
+        if (this.canvas) {
+            if (this.wheelHandler) {
+                this.canvas.removeEventListener('wheel', this.wheelHandler)
+            }
+            if (this.contextMenuHandler) {
+                this.canvas.removeEventListener('contextmenu', this.contextMenuHandler)
+            }
+            if (this.pointerDownHandler) {
+                this.canvas.removeEventListener('pointerdown', this.pointerDownHandler)
+            }
+            if (this.pointerMoveHandler) {
+                this.canvas.removeEventListener('pointermove', this.pointerMoveHandler)
+            }
+            if (this.pointerUpHandler) {
+                this.canvas.removeEventListener('pointerup', this.pointerUpHandler)
+                this.canvas.removeEventListener('pointercancel', this.pointerUpHandler)
+            }
         }
         this.canvas = null
         this.wheelHandler = null
         this.contextMenuHandler = null
+        this.pointerDownHandler = null
+        this.pointerMoveHandler = null
+        this.pointerUpHandler = null
+        this.rmbDrag = null
         if (this.app) {
             this.app.destroy(true, { children: true, texture: true })
             this.app = null
@@ -465,12 +519,13 @@ export class WorldMap {
                 dot.eventMode = 'static'
                 dot.cursor = 'pointer'
                 dot.on('pointerdown', (e: FederatedPointerEvent) => {
-                    e.stopPropagation() // don't fall through to the tile click
-                    if (e.button === 2) {
-                        this.onRightClick?.()
-                        return
-                    }
+                    // LMB only — RMB is owned by the DOM-level pointer
+                    // handlers so the 5 px tap-vs-drag rule (#84) applies
+                    // uniformly whether the press started on a marker or
+                    // on empty grid. Stop propagation so an LMB hit on a
+                    // body doesn't also fire a tile-click underneath.
                     if (e.button !== 0) return
+                    e.stopPropagation()
                     this.onBodyClick?.(body)
                 })
                 dot.on('pointerover', (e: FederatedPointerEvent) =>
@@ -536,12 +591,10 @@ export class WorldMap {
                 marker.eventMode = 'static'
                 marker.cursor = 'pointer'
                 marker.on('pointerdown', (e: FederatedPointerEvent) => {
-                    e.stopPropagation()
-                    if (e.button === 2) {
-                        this.onRightClick?.()
-                        return
-                    }
+                    // LMB only — see the matching comment on the body
+                    // marker above. DOM-level pointer handlers own RMB.
                     if (e.button !== 0) return
+                    e.stopPropagation()
                     this.onShipClick?.(ship)
                 })
                 marker.on('pointerover', (e: FederatedPointerEvent) =>
@@ -569,16 +622,101 @@ export class WorldMap {
     // ---------- input ----------
 
     private handleBackgroundClick(event: FederatedPointerEvent): void {
-        // Right-click is universal "cancel / deselect" — it's the only effect
-        // a right press has, regardless of what's underneath.
-        if (event.button === 2) {
-            this.onRightClick?.()
-            return
-        }
-        if (event.button !== 0) return // middle / aux buttons: ignore
+        // RMB is handled by the DOM-level pointer handlers below — they own
+        // the full tap-vs-drag distinction (#84). LMB stays here.
+        if (event.button !== 0) return
         if (!this.onTileClick) return
         const tile = this.screenToTile(event.global.x, event.global.y)
         if (tile) this.onTileClick(tile.x, tile.y)
+    }
+
+    // ---------- RMB drag-pan (#84) ----------
+
+    /**
+     * RMB press starts a potential drag. We don't commit to "this is a pan"
+     * yet — the tap-vs-drag decision happens on the first move past
+     * {@link DRAG_THRESHOLD_PX}. Capturing the pointer means subsequent moves
+     * outside the canvas (dragging past the edge) still route here.
+     */
+    private handlePointerDown(event: PointerEvent): void {
+        if (event.button !== 2) return
+        if (!this.canvas) return
+        this.rmbDrag = {
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startCameraX: this.camera.x,
+            startCameraY: this.camera.y,
+            moved: false,
+            pointerId: event.pointerId,
+        }
+        this.canvas.setPointerCapture(event.pointerId)
+    }
+
+    /**
+     * RMB moved. While {@code rmbDrag} is active, translate the camera so
+     * the world point under the cursor at press-time stays under the cursor.
+     * Once {@code moved} flips true, the gesture is committed to "pan" —
+     * the matching pointerup will <i>not</i> fire {@code onRightClick}.
+     */
+    private handlePointerMove(event: PointerEvent): void {
+        if (!this.rmbDrag) return
+        const dx = event.clientX - this.rmbDrag.startClientX
+        const dy = event.clientY - this.rmbDrag.startClientY
+        if (!this.rmbDrag.moved) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < WorldMap.DRAG_THRESHOLD_PX) {
+                return
+            }
+            this.rmbDrag.moved = true
+            this.setPanCursor(true)
+        }
+        const delta = pixelsToCameraDelta(dx, dy, this.camera.zoom, WorldMap.TILE_PX)
+        this.camera = {
+            x: clamp(this.rmbDrag.startCameraX + delta.dx, 0, WorldMap.GRID_CELLS),
+            y: clamp(this.rmbDrag.startCameraY + delta.dy, 0, WorldMap.GRID_CELLS),
+            zoom: this.camera.zoom,
+        }
+        this.applyCamera()
+        this.drawGrid()
+        this.renderSelectionRing()
+    }
+
+    /**
+     * Release ends the RMB gesture. A tap (no movement past the threshold)
+     * fires the existing {@code onRightClick} deselect — preserves the
+     * historical RMB affordance. A drag just cleans up.
+     *
+     * <p>A {@code pointercancel} (e.g. OS focus-steal, browser-level abort)
+     * resolves the same way as a drag: clean up state but <i>don't</i>
+     * fire {@code onRightClick}. An aborted gesture isn't a user-intended
+     * tap — silently deselecting on focus-steal would be confusing.
+     */
+    private handlePointerUp(event: PointerEvent): void {
+        if (!this.rmbDrag || event.pointerId !== this.rmbDrag.pointerId) return
+        const wasDrag = this.rmbDrag.moved
+        if (this.canvas?.hasPointerCapture(event.pointerId)) {
+            this.canvas.releasePointerCapture(event.pointerId)
+        }
+        this.rmbDrag = null
+        this.setPanCursor(false)
+        if (!wasDrag && event.type === 'pointerup') {
+            this.onRightClick?.()
+        }
+    }
+
+    /**
+     * Toggle the grabbing cursor for pan mode. Skips the override while
+     * targeting is active so the crosshair cursor (set via a CSS class on
+     * the outer wrapper in Game.tsx) keeps precedence.
+     */
+    private setPanCursor(panning: boolean): void {
+        if (!this.canvas) return
+        if (panning && !this.targeting) {
+            this.canvas.style.cursor = 'grabbing'
+        } else {
+            // Empty string removes the inline rule so the stylesheet wins
+            // (crosshair in targeting mode, default otherwise).
+            this.canvas.style.cursor = ''
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CANVAS_PX, GRID_CELLS, TILE_PX, clamp, tileToPx } from './WorldMap.helpers'
+import { CANVAS_PX, GRID_CELLS, TILE_PX, clamp, pixelsToCameraDelta, tileToPx } from './WorldMap.helpers'
 
 describe('WorldMap.helpers', () => {
     describe('grid constants', () => {
@@ -49,6 +49,24 @@ describe('WorldMap.helpers', () => {
         it('treats min and max as inclusive', () => {
             expect(clamp(0, 0, 10)).toBe(0)
             expect(clamp(10, 0, 10)).toBe(10)
+        })
+    })
+
+    describe('pixelsToCameraDelta', () => {
+        it('negates the sign so dragging right moves the camera left', () => {
+            // 12 px right at zoom 1 == TILE_PX * 1 = 6 px per tile → 2 tiles
+            // worth of screen movement → camera shifts left 2 tiles.
+            expect(pixelsToCameraDelta(12, 0, 1)).toEqual({ dx: -2, dy: 0 })
+            expect(pixelsToCameraDelta(0, 12, 1)).toEqual({ dx: 0, dy: -2 })
+        })
+
+        it('divides the delta by zoom so high-zoom drags pan less in world space', () => {
+            // Same screen movement at zoom 4 covers 4x fewer world tiles.
+            expect(pixelsToCameraDelta(24, 0, 4)).toEqual({ dx: -1, dy: 0 })
+        })
+
+        it('honours a custom tilePx', () => {
+            expect(pixelsToCameraDelta(24, 0, 1, 12)).toEqual({ dx: -2, dy: 0 })
         })
     })
 })
